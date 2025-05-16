@@ -1,0 +1,89 @@
+name: pulsemeet
+description: A spontaneous, location-based meetup app with ephemeral chat and real-time features.
+publish_to: "none"
+version: 1.0.0+1
+
+environment:
+  sdk: ">=3.0.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # State Management
+  provider: ^6.1.1
+  get_it: ^7.6.0
+
+  # Navigation
+  go_router: ^13.0.0
+
+  # Supabase Backend
+  supabase_flutter: ^1.10.18
+
+  # Location & Maps
+  geolocator: ^9.0.2
+  google_maps_flutter: ^2.5.0
+  # Removed geofence_service due to compatibility issues with Android Gradle Plugin
+
+  # UI/UX & Animations
+  lottie: ^2.7.0
+  shimmer: ^3.0.0
+  flutter_svg: ^2.0.7
+  animations: ^2.0.8
+  cached_network_image: ^3.3.1
+  flutter_spinkit: ^5.2.0
+  url_launcher: ^6.2.6
+  smooth_page_indicator: ^1.1.0
+
+  # Media & Image Handling
+  image_picker: ^1.0.4
+  image_cropper: ^9.1.0
+  path_provider: ^2.1.2
+
+  # Permission Handling
+  permission_handler: ^11.3.0
+
+  # Date & Time
+  intl: ^0.18.1
+  timezone: ^0.10.1
+
+  # JSON Serialization
+  json_annotation: ^4.8.1
+
+  # Misc
+  uuid: ^4.2.2
+  flutter_local_notifications: ^19.2.0
+  connectivity_plus: ^5.0.2
+  shared_preferences: ^2.2.2
+  latlong2: ^0.9.1
+  app_links: ^3.5.1
+  flutter_dotenv: ^5.1.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+
+  flutter_lints: ^3.0.1
+  build_runner: ^2.4.6
+  json_serializable: ^6.7.1
+
+# Dependency overrides to fix compatibility issues
+dependency_overrides:
+  sign_in_with_apple: ^7.0.1
+
+flutter:
+  uses-material-design: true
+
+  assets:
+    - .env
+    # - assets/images/
+    # - assets/lottie/
+    # - assets/icons/
+    # - assets/fonts/
+
+  # fonts:
+  #   - family: Inter
+  #     fonts:
+  #       - asset: assets/fonts/Inter-Regular.ttf
+  #       - asset: assets/fonts/Inter-Bold.ttf
+  #       - asset: assets/fonts/Inter-SemiBold.ttf
