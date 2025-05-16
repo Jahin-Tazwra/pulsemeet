@@ -7,6 +7,7 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:pulsemeet/models/pulse.dart';
 import 'package:pulsemeet/services/supabase_service.dart';
 import 'package:pulsemeet/screens/pulse/pulse_chat_screen.dart';
+import 'package:pulsemeet/utils/map_utils.dart';
 
 /// Screen for viewing pulse details
 class PulseDetailsScreen extends StatefulWidget {
@@ -508,6 +509,46 @@ class _PulseDetailsScreenState extends State<PulseDetailsScreen> {
     }
   }
 
+  /// Opens Google Maps with directions to the pulse location
+  Future<void> _openDirections() async {
+    try {
+      // Open Google Maps with directions to the pulse location
+      final success = await MapUtils.openGoogleMapsDirections(
+        widget.pulse.location,
+        destinationName: widget.pulse.title,
+      );
+
+      // Show error dialog if maps couldn't be opened
+      if (!success && mounted) {
+        _showMapError();
+      }
+    } catch (e) {
+      debugPrint('Error opening directions: $e');
+      if (mounted) {
+        _showMapError();
+      }
+    }
+  }
+
+  /// Shows an error dialog when maps cannot be opened
+  void _showMapError() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Cannot Open Maps'),
+        content: const Text(
+          'Unable to open maps application. Please make sure you have a maps app installed and try again.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final dateFormat = DateFormat('EEEE, MMMM d, yyyy');
@@ -821,6 +862,23 @@ class _PulseDetailsScreenState extends State<PulseDetailsScreen> {
                               foregroundColor: Colors.white,
                             ),
                           ),
+                  ),
+                  const SizedBox(height: 16),
+                  // Get Directions button
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: () {
+                        _openDirections();
+                      },
+                      icon: const Icon(Icons.directions),
+                      label: const Text('Get Directions'),
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        foregroundColor: Colors.blue,
+                        side: const BorderSide(color: Colors.blue),
+                      ),
+                    ),
                   ),
                   const SizedBox(height: 16),
                   // Chat button (only if joined)
