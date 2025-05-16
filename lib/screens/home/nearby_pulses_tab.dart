@@ -8,6 +8,7 @@ import 'package:pulsemeet/services/pulse_notifier.dart';
 import 'package:pulsemeet/models/pulse.dart';
 import 'package:pulsemeet/widgets/pulse_card.dart';
 import 'package:pulsemeet/screens/pulse/pulse_details_screen.dart';
+import 'package:pulsemeet/screens/pulse/create_pulse_screen.dart';
 import 'package:pulsemeet/screens/home/nearby_pulses_map_view.dart';
 
 /// Tab showing nearby pulses
@@ -21,10 +22,13 @@ class NearbyPulsesTab extends StatefulWidget {
 class _NearbyPulsesTabState extends State<NearbyPulsesTab> {
   List<Pulse> _nearbyPulses = [];
   bool _isLoading = true;
+  bool _isSearchingForClosestPulse = false;
   String? _errorMessage;
   Position? _currentPosition;
   bool _showMapView = true; // Default to map view
   late final StreamSubscription<Pulse> _pulseCreatedSubscription;
+  final GlobalKey<ScaffoldMessengerState> _scaffoldMessengerKey =
+      GlobalKey<ScaffoldMessengerState>();
 
   @override
   void initState() {
@@ -70,8 +74,12 @@ class _NearbyPulsesTabState extends State<NearbyPulsesTab> {
         return;
       }
 
-      // Get current position
-      final position = await Geolocator.getCurrentPosition();
+      // Get current position with high accuracy
+      final position = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high,
+      );
+
+      // Update state with the new position
       setState(() {
         _currentPosition = position;
       });
@@ -129,162 +137,193 @@ class _NearbyPulsesTabState extends State<NearbyPulsesTab> {
     }
   }
 
+  /// Find all pulses regardless of distance
+  Future<void> _findAllPulses() async {
+    if (_currentPosition == null) {
+      // If we don't have a position yet, try to get it first
+      await _getCurrentLocation();
+      return;
+    }
+
+    setState(() {
+      _isSearchingForClosestPulse = true;
+    });
+
+    try {
+      final supabaseService =
+          Provider.of<SupabaseService>(context, listen: false);
+
+      // Use a very large search radius to find all pulses
+      final pulses = await supabaseService.getNearbyPulses(
+        _currentPosition!.latitude,
+        _currentPosition!.longitude,
+        maxDistance: 50000, // 50km radius to find more pulses
+      );
+
+      if (mounted) {
+        setState(() {
+          // Only update if we found pulses
+          if (pulses.isNotEmpty) {
+            _nearbyPulses = pulses;
+          }
+          _isSearchingForClosestPulse = false;
+        });
+
+        // Show a message if no pulses were found
+        if (pulses.isEmpty) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('No pulses found anywhere. Try creating one!'),
+              duration: Duration(seconds: 3),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      debugPrint('Error finding all pulses: $e');
+      if (mounted) {
+        setState(() {
+          _isSearchingForClosestPulse = false;
+        });
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error finding pulses: ${e.toString()}'),
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+    }
+  }
+
+  /// Handle the find closest pulse button press
+  void _handleFindClosestPulse(bool isLoading) {
+    setState(() {
+      _isSearchingForClosestPulse = isLoading;
+    });
+
+    // If we're done searching and there were no pulses found, try to find all pulses
+    if (!isLoading && _nearbyPulses.isEmpty) {
+      _findAllPulses();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('PulseMeet'),
-        centerTitle: true,
-        leading: CircleAvatar(
-          backgroundColor: Colors.blue.shade100,
-          child: const Icon(Icons.person),
-        ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.notifications_outlined),
-            onPressed: () {
-              // TODO: Navigate to notifications screen
-            },
+    return ScaffoldMessenger(
+      key: _scaffoldMessengerKey,
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('PulseMeet'),
+          centerTitle: true,
+          leading: CircleAvatar(
+            backgroundColor: Colors.blue.shade100,
+            child: const Icon(Icons.person),
           ),
-        ],
-      ),
-      body: Column(
-        children: [
-          // View toggle
-          Padding(
-            padding:
-                const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-            child: Container(
-              decoration: BoxDecoration(
-                color: Colors.blue.shade100,
-                borderRadius: BorderRadius.circular(30),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Expanded(
-                    child: GestureDetector(
-                      onTap: () {
-                        setState(() {
-                          _showMapView = true;
-                        });
-                      },
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                        decoration: BoxDecoration(
-                          color:
-                              _showMapView ? Colors.blue : Colors.transparent,
-                          borderRadius: BorderRadius.circular(30),
-                        ),
-                        child: Text(
-                          'Map',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            color: _showMapView ? Colors.white : Colors.black,
-                            fontWeight: FontWeight.bold,
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.notifications_outlined),
+              onPressed: () {
+                // TODO: Navigate to notifications screen
+              },
+            ),
+          ],
+        ),
+        body: Column(
+          children: [
+            // View toggle
+            Padding(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+              child: Container(
+                decoration: BoxDecoration(
+                  color: Colors.blue.shade100,
+                  borderRadius: BorderRadius.circular(30),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Expanded(
+                      child: GestureDetector(
+                        onTap: () {
+                          setState(() {
+                            _showMapView = true;
+                          });
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          decoration: BoxDecoration(
+                            color:
+                                _showMapView ? Colors.blue : Colors.transparent,
+                            borderRadius: BorderRadius.circular(30),
+                          ),
+                          child: Text(
+                            'Map',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color: _showMapView ? Colors.white : Colors.black,
+                              fontWeight: FontWeight.bold,
+                            ),
                           ),
                         ),
                       ),
                     ),
-                  ),
-                  Expanded(
-                    child: GestureDetector(
-                      onTap: () {
-                        setState(() {
-                          _showMapView = false;
-                        });
-                      },
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                        decoration: BoxDecoration(
-                          color:
-                              !_showMapView ? Colors.blue : Colors.transparent,
-                          borderRadius: BorderRadius.circular(30),
-                        ),
-                        child: Text(
-                          'List',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            color: !_showMapView ? Colors.white : Colors.black,
-                            fontWeight: FontWeight.bold,
+                    Expanded(
+                      child: GestureDetector(
+                        onTap: () {
+                          setState(() {
+                            _showMapView = false;
+                          });
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          decoration: BoxDecoration(
+                            color: !_showMapView
+                                ? Colors.blue
+                                : Colors.transparent,
+                            borderRadius: BorderRadius.circular(30),
+                          ),
+                          child: Text(
+                            'List',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color:
+                                  !_showMapView ? Colors.white : Colors.black,
+                              fontWeight: FontWeight.bold,
+                            ),
                           ),
                         ),
                       ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
-          ),
-          // Main content
-          Expanded(
-            child: _buildBody(),
-          ),
-        ],
+            // Main content
+            Expanded(
+              child: _buildBody(),
+            ),
+          ],
+        ),
+        floatingActionButton: FloatingActionButton(
+          onPressed: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => const CreatePulseScreen(),
+              ),
+            ).then((_) {
+              // Refresh the list when returning from create screen
+              _fetchNearbyPulses();
+            });
+          },
+          child: const Icon(Icons.add),
+        ),
       ),
     );
   }
 
   Widget _buildBody() {
-    if (_isLoading) {
-      return const Center(
-        child: CircularProgressIndicator(),
-      );
-    }
-
-    if (_errorMessage != null) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Text(
-              _errorMessage!,
-              textAlign: TextAlign.center,
-              style: const TextStyle(color: Colors.red),
-            ),
-            const SizedBox(height: 16),
-            ElevatedButton(
-              onPressed: _getCurrentLocation,
-              child: const Text('Retry'),
-            ),
-          ],
-        ),
-      );
-    }
-
-    if (_nearbyPulses.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(
-              Icons.location_off,
-              size: 64,
-              color: Colors.grey,
-            ),
-            const SizedBox(height: 16),
-            const Text(
-              'No pulses found nearby',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(height: 8),
-            const Text(
-              'Try creating a new pulse!',
-              style: TextStyle(color: Colors.grey),
-            ),
-            const SizedBox(height: 16),
-            ElevatedButton(
-              onPressed: _fetchNearbyPulses,
-              child: const Text('Refresh'),
-            ),
-          ],
-        ),
-      );
-    }
-
     // Convert current position to LatLng for map view
     LatLng? currentLatLng;
     if (_currentPosition != null) {
@@ -294,15 +333,174 @@ class _NearbyPulsesTabState extends State<NearbyPulsesTab> {
       );
     }
 
-    // Show either map view or list view based on toggle
+    // If showing map view, always display the map regardless of pulse availability
     if (_showMapView) {
-      return NearbyPulsesMapView(
-        pulses: _nearbyPulses,
-        currentLocation: currentLatLng,
-        onRefresh: _fetchNearbyPulses,
+      // Always show the map, even when loading
+      // The map will show its own loading indicator when waiting for location
+      if (_isLoading) {
+        return Stack(
+          children: [
+            NearbyPulsesMapView(
+              pulses: _nearbyPulses,
+              currentLocation:
+                  currentLatLng, // This might be null while loading
+              onRefresh: _fetchNearbyPulses,
+              searchRadius: 5000, // Default search radius in meters
+              onFindClosestPulse: _handleFindClosestPulse,
+            ),
+            // Only show the loading indicator if we don't have a location yet
+            if (currentLatLng == null)
+              const Center(
+                child: CircularProgressIndicator(),
+              ),
+          ],
+        );
+      }
+
+      // Show error message overlay on top of map if there's an error
+      if (_errorMessage != null) {
+        return Stack(
+          children: [
+            NearbyPulsesMapView(
+              pulses: _nearbyPulses,
+              currentLocation: currentLatLng,
+              onRefresh: _fetchNearbyPulses,
+              searchRadius: 5000, // Default search radius in meters
+              onFindClosestPulse: _handleFindClosestPulse,
+            ),
+            Center(
+              child: Container(
+                margin: const EdgeInsets.all(24),
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.white.withAlpha(230), // ~0.9 opacity
+                  borderRadius: BorderRadius.circular(12),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withAlpha(25), // ~0.1 opacity
+                      blurRadius: 10,
+                      spreadRadius: 2,
+                    ),
+                  ],
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      _errorMessage!,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(color: Colors.red),
+                    ),
+                    const SizedBox(height: 16),
+                    ElevatedButton(
+                      onPressed: _getCurrentLocation,
+                      child: const Text('Retry'),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        );
+      }
+
+      // Normal map view (with or without pulses)
+      return Stack(
+        children: [
+          NearbyPulsesMapView(
+            pulses: _nearbyPulses,
+            currentLocation: currentLatLng,
+            onRefresh: _fetchNearbyPulses,
+            searchRadius: 5000, // Default search radius in meters
+            onFindClosestPulse: _handleFindClosestPulse,
+          ),
+
+          // Show loading indicator when searching for closest pulse
+          if (_isSearchingForClosestPulse)
+            Container(
+              color: Colors.black.withAlpha(100), // Semi-transparent overlay
+              child: const Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    CircularProgressIndicator(color: Colors.white),
+                    SizedBox(height: 16),
+                    Text(
+                      'Finding closest pulse...',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+        ],
       );
     } else {
-      // List view
+      // List view - show appropriate states for loading, error, or empty list
+      if (_isLoading) {
+        return const Center(
+          child: CircularProgressIndicator(),
+        );
+      }
+
+      if (_errorMessage != null) {
+        return Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text(
+                _errorMessage!,
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: Colors.red),
+              ),
+              const SizedBox(height: 16),
+              ElevatedButton(
+                onPressed: _getCurrentLocation,
+                child: const Text('Retry'),
+              ),
+            ],
+          ),
+        );
+      }
+
+      if (_nearbyPulses.isEmpty) {
+        return Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(
+                Icons.location_off,
+                size: 64,
+                color: Colors.grey,
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                'No pulses found nearby',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                'Try creating a new pulse!',
+                style: TextStyle(color: Colors.grey),
+              ),
+              const SizedBox(height: 16),
+              ElevatedButton(
+                onPressed: _fetchNearbyPulses,
+                child: const Text('Refresh'),
+              ),
+            ],
+          ),
+        );
+      }
+
+      // List view with pulses
       return RefreshIndicator(
         onRefresh: _fetchNearbyPulses,
         child: ListView.builder(

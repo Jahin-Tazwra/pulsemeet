@@ -60,11 +60,12 @@ class Pulse {
           return LatLng(lat, lng);
         }
 
-        // Second priority: Parse from PostGIS POINT format
-        if (json['location'] is String &&
-            json['location'].toString().startsWith('POINT')) {
+        // Second priority: Parse from PostGIS POINT format or location_text
+        final locationString = json['location_text'] ?? json['location'];
+        if (locationString is String &&
+            locationString.toString().startsWith('POINT')) {
           // Parse from PostGIS POINT format: 'POINT(longitude latitude)'
-          final pointString = json['location']
+          final pointString = locationString
               .toString()
               .replaceAll('POINT(', '')
               .replaceAll(')', '');

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
 
@@ -229,46 +230,149 @@ class SupabaseService {
       throw Exception('User not authenticated');
     }
 
-    final data = {
-      'creator_id': userId,
-      'title': title,
-      'description': description,
-      'activity_emoji': activityEmoji,
-      'location': 'POINT($longitude $latitude)',
-      'radius': radius,
-      'start_time': startTime.toIso8601String(),
-      'end_time': endTime.toIso8601String(),
-      if (maxParticipants != null) 'max_participants': maxParticipants,
-    };
+    try {
+      debugPrint('Creating pulse with location: ($latitude, $longitude)');
 
-    // Insert the pulse and return with extracted coordinates
-    final response = await _client.from('pulses').insert(data).select('''
-      *,
-      st_x(location::geometry) as longitude,
-      st_y(location::geometry) as latitude
-    ''').single();
-
-    // Verify the coordinates were stored correctly
-    if (response['longitude'] != null && response['latitude'] != null) {
-      final storedLng = double.parse(response['longitude'].toString());
-      final storedLat = double.parse(response['latitude'].toString());
-
-      debugPrint('Stored pulse coordinates: lat=$storedLat, lng=$storedLng');
-
-      // Check if the coordinates match what we sent
-      if ((storedLat - latitude).abs() > 0.0001 ||
-          (storedLng - longitude).abs() > 0.0001) {
-        debugPrint(
-            'WARNING: Stored coordinates differ from input coordinates!');
+      // First, let's check if we have the stored procedure we need
+      bool hasStoredProcedure = false;
+      try {
+        final procedures = await _client.rpc(
+          'get_available_functions',
+          params: {},
+        );
+        if (procedures is List) {
+          hasStoredProcedure = procedures
+              .any((p) => p.toString().contains('create_pulse_with_location'));
+        }
+      } catch (e) {
+        debugPrint('Error checking for stored procedure: $e');
+        // Continue with the fallback approach
       }
-    } else {
-      debugPrint('WARNING: No coordinates extracted from stored pulse');
+
+      if (hasStoredProcedure) {
+        debugPrint('Using create_pulse_with_location stored procedure');
+        // Use the stored procedure if available
+        final result = await _client.rpc(
+          'create_pulse_with_location',
+          params: {
+            'creator_id_param': userId,
+            'title_param': title,
+            'description_param': description,
+            'activity_emoji_param': activityEmoji,
+            'latitude_param': latitude,
+            'longitude_param': longitude,
+            'radius_param': radius,
+            'start_time_param': startTime.toIso8601String(),
+            'end_time_param': endTime.toIso8601String(),
+            'max_participants_param': maxParticipants,
+          },
+        );
+
+        if (result == null) {
+          throw Exception('Failed to create pulse: No response from database');
+        }
+
+        // Process the result
+        final Map<String, dynamic> pulseData;
+        if (result is Map<String, dynamic>) {
+          pulseData = result;
+        } else if (result is List &&
+            result.isNotEmpty &&
+            result[0] is Map<String, dynamic>) {
+          pulseData = result[0];
+        } else {
+          throw Exception('Unexpected response format from database: $result');
+        }
+
+        final pulseId = pulseData['id'];
+        debugPrint('Pulse created with ID: $pulseId');
+
+        // Automatically join the pulse as creator
+        await joinPulse(pulseId);
+
+        return Pulse.fromJson(pulseData);
+      } else {
+        debugPrint('Using direct SQL approach');
+        // Fallback to direct SQL approach
+
+        // Create a raw SQL query to insert the pulse with proper PostGIS handling
+        final rawQuery = '''
+        INSERT INTO pulses (
+          creator_id, title, description, activity_emoji,
+          location, radius, start_time, end_time,
+          max_participants, is_active, created_at, updated_at
+        ) VALUES (
+          '$userId', '$title', '$description', ${activityEmoji != null ? "'$activityEmoji'" : 'NULL'},
+          ST_SetSRID(ST_MakePoint($longitude, $latitude), 4326)::geography, $radius,
+          '${startTime.toIso8601String()}', '${endTime.toIso8601String()}',
+          ${maxParticipants ?? 'NULL'}, true,
+          NOW(), NOW()
+        ) RETURNING id
+        ''';
+
+        // Execute the raw query
+        final response = await _client.rpc(
+          'execute_sql',
+          params: {
+            'query': rawQuery,
+          },
+        );
+
+        // Extract the pulse ID
+        String? pulseId;
+        if (response is List && response.isNotEmpty) {
+          pulseId = response[0]['id']?.toString();
+        }
+
+        if (pulseId == null) {
+          throw Exception('Failed to create pulse: No ID returned');
+        }
+
+        debugPrint('Pulse created with ID: $pulseId');
+
+        // Now get the pulse with coordinates
+        final pulseResponse = await _client.rpc(
+          'get_pulse_with_coordinates',
+          params: {
+            'pulse_id_param': pulseId,
+          },
+        ).single();
+
+        if (pulseResponse == null) {
+          throw Exception('Failed to retrieve created pulse');
+        }
+
+        // Verify the coordinates were stored correctly
+        if (pulseResponse['longitude'] != null &&
+            pulseResponse['latitude'] != null) {
+          final storedLng = double.parse(pulseResponse['longitude'].toString());
+          final storedLat = double.parse(pulseResponse['latitude'].toString());
+
+          debugPrint(
+              'Stored pulse coordinates: lat=$storedLat, lng=$storedLng');
+
+          // Check if the coordinates match what we sent
+          if ((storedLat - latitude).abs() > 0.0001 ||
+              (storedLng - longitude).abs() > 0.0001) {
+            debugPrint(
+                'WARNING: Stored coordinates differ from input coordinates!');
+          }
+        } else {
+          debugPrint('WARNING: No coordinates extracted from stored pulse');
+          // Add coordinates manually
+          pulseResponse['longitude'] = longitude;
+          pulseResponse['latitude'] = latitude;
+        }
+
+        // Automatically join the pulse as creator
+        await joinPulse(pulseId);
+
+        return Pulse.fromJson(pulseResponse);
+      }
+    } catch (e) {
+      debugPrint('Error creating pulse: $e');
+      rethrow;
     }
-
-    // Automatically join the pulse as creator
-    await joinPulse(response['id']);
-
-    return Pulse.fromJson(response);
   }
 
   /// Get nearby pulses
@@ -294,39 +398,59 @@ class SupabaseService {
       debugPrint(
           'Received response: ${response.runtimeType}, length: ${response is List ? response.length : 0}');
 
-      // Ensure response is a List and convert each item to a Pulse
+      // Process the response which could be in different formats
+      List<Map<String, dynamic>> pulseDataList = [];
+
       if (response is List) {
-        final pulses = response
-            .map((item) {
-              if (item is Map<String, dynamic>) {
-                try {
-                  // Debug the location data
-                  debugPrint(
-                      'Pulse ${item['id']} location data: ${item['location']}');
-                  debugPrint(
-                      'Pulse ${item['id']} coordinates: lat=${item['latitude']}, lng=${item['longitude']}');
-
-                  return Pulse.fromJson(item);
-                } catch (e) {
-                  debugPrint('Error parsing pulse: $e');
-                  debugPrint('Problematic data: $item');
-                  return null;
-                }
-              } else {
-                debugPrint('Invalid pulse data format: $item');
-                return null;
-              }
-            })
-            .where((pulse) => pulse != null)
-            .cast<Pulse>()
-            .toList();
-
-        debugPrint('Successfully parsed ${pulses.length} pulses');
-        return pulses;
-      } else {
-        debugPrint('Invalid response format: $response');
-        return [];
+        for (var item in response) {
+          if (item is Map<String, dynamic>) {
+            pulseDataList.add(item);
+          } else if (item is String) {
+            // Try to parse as JSON if it's a string
+            try {
+              final Map<String, dynamic> jsonData = jsonDecode(item);
+              pulseDataList.add(jsonData);
+            } catch (e) {
+              debugPrint('Error parsing JSON string: $e');
+            }
+          }
+        }
       }
+
+      debugPrint('Processed ${pulseDataList.length} pulse data items');
+
+      // Convert each item to a Pulse
+      final pulses = pulseDataList
+          .map((item) {
+            try {
+              // Debug the location data
+              debugPrint(
+                  'Pulse ${item['id']} location data: ${item['location_text'] ?? item['location']}');
+              debugPrint(
+                  'Pulse ${item['id']} coordinates: lat=${item['latitude']}, lng=${item['longitude']}');
+
+              // Create Pulse object
+              final pulse = Pulse.fromJson(item);
+
+              // Add distance if available
+              if (item['distance_meters'] != null) {
+                pulse.distanceMeters =
+                    double.parse(item['distance_meters'].toString());
+              }
+
+              return pulse;
+            } catch (e) {
+              debugPrint('Error parsing pulse: $e');
+              debugPrint('Problematic data: $item');
+              return null;
+            }
+          })
+          .where((pulse) => pulse != null)
+          .cast<Pulse>()
+          .toList();
+
+      debugPrint('Successfully parsed ${pulses.length} pulses');
+      return pulses;
     } catch (e) {
       debugPrint('Error fetching nearby pulses: $e');
 
@@ -340,30 +464,43 @@ class SupabaseService {
           params: {},
         );
 
+        List<Map<String, dynamic>> pulseDataList = [];
+
         if (response is List) {
+          for (var item in response) {
+            if (item is Map<String, dynamic>) {
+              pulseDataList.add(item);
+            } else if (item is String) {
+              try {
+                final Map<String, dynamic> jsonData = jsonDecode(item);
+                pulseDataList.add(jsonData);
+              } catch (e) {
+                debugPrint('Error parsing JSON string: $e');
+              }
+            }
+          }
+
           // Filter pulses by distance manually
           final userPoint = LatLng(latitude, longitude);
           final nearbyPulses = <Pulse>[];
 
-          for (final item in response) {
+          for (final item in pulseDataList) {
             try {
-              if (item is Map<String, dynamic>) {
-                final pulse = Pulse.fromJson(item);
+              final pulse = Pulse.fromJson(item);
 
-                // Calculate distance using the Haversine formula
-                final distance = _calculateDistance(userPoint, pulse.location);
+              // Calculate distance using the Haversine formula
+              final distance = _calculateDistance(userPoint, pulse.location);
 
-                // Convert to meters
-                final distanceMeters = distance * 1000;
+              // Convert to meters
+              final distanceMeters = distance * 1000;
 
-                // Only include pulses within the max distance
-                if (distanceMeters <= maxDistance) {
-                  // Add distance to the pulse data
-                  pulse.distanceMeters = distanceMeters;
-                  nearbyPulses.add(pulse);
-                  debugPrint(
-                      'Added nearby pulse: ${pulse.title} at distance ${pulse.formattedDistance}');
-                }
+              // Only include pulses within the max distance
+              if (distanceMeters <= maxDistance) {
+                // Add distance to the pulse data
+                pulse.distanceMeters = distanceMeters;
+                nearbyPulses.add(pulse);
+                debugPrint(
+                    'Added nearby pulse: ${pulse.title} at distance ${pulse.formattedDistance}');
               }
             } catch (e) {
               debugPrint('Error processing pulse: $e');
@@ -548,28 +685,43 @@ class SupabaseService {
         },
       );
 
-      if (response is List) {
-        final pulses = response
-            .map((item) {
-              if (item is Map<String, dynamic>) {
-                try {
-                  return Pulse.fromJson(item);
-                } catch (e) {
-                  debugPrint('Error parsing pulse: $e');
-                  return null;
-                }
-              } else {
-                return null;
-              }
-            })
-            .where((pulse) => pulse != null)
-            .cast<Pulse>()
-            .toList();
+      // Process the response which could be in different formats
+      List<Map<String, dynamic>> pulseDataList = [];
 
-        return pulses;
-      } else {
-        return [];
+      if (response is List) {
+        for (var item in response) {
+          if (item is Map<String, dynamic>) {
+            pulseDataList.add(item);
+          } else if (item is String) {
+            // Try to parse as JSON if it's a string
+            try {
+              final Map<String, dynamic> jsonData = jsonDecode(item);
+              pulseDataList.add(jsonData);
+            } catch (e) {
+              debugPrint('Error parsing JSON string: $e');
+            }
+          }
+        }
       }
+
+      debugPrint('Processed ${pulseDataList.length} created pulse data items');
+
+      // Convert each item to a Pulse
+      final pulses = pulseDataList
+          .map((item) {
+            try {
+              return Pulse.fromJson(item);
+            } catch (e) {
+              debugPrint('Error parsing pulse: $e');
+              debugPrint('Problematic data: $item');
+              return null;
+            }
+          })
+          .where((pulse) => pulse != null)
+          .cast<Pulse>()
+          .toList();
+
+      return pulses;
     } catch (e) {
       debugPrint('Error fetching created pulses: $e');
       rethrow;
@@ -587,17 +739,36 @@ class SupabaseService {
         params: {
           'pulse_id_param': pulseId,
         },
-      ).single();
+      );
 
-      if (response != null) {
+      // Process the response which could be in different formats
+      Map<String, dynamic>? pulseData;
+
+      if (response is List && response.isNotEmpty) {
+        var item = response[0];
+        if (item is Map<String, dynamic>) {
+          pulseData = item;
+        } else if (item is String) {
+          // Try to parse as JSON if it's a string
+          try {
+            pulseData = jsonDecode(item);
+          } catch (e) {
+            debugPrint('Error parsing JSON string: $e');
+          }
+        }
+      } else if (response is Map<String, dynamic>) {
+        pulseData = response;
+      }
+
+      if (pulseData != null) {
         // Add creator_name from the joined profiles table
-        if (response['profiles'] != null &&
-            response['profiles']['display_name'] != null) {
-          response['creator_name'] = response['profiles']['display_name'];
+        if (pulseData['profiles'] != null &&
+            pulseData['profiles']['display_name'] != null) {
+          pulseData['creator_name'] = pulseData['profiles']['display_name'];
         }
 
         // Parse the pulse
-        final pulse = Pulse.fromJson(response);
+        final pulse = Pulse.fromJson(pulseData);
         return pulse;
       }
 
@@ -640,28 +811,43 @@ class SupabaseService {
         },
       );
 
-      if (pulsesResponse is List) {
-        final pulses = pulsesResponse
-            .map((item) {
-              if (item is Map<String, dynamic>) {
-                try {
-                  return Pulse.fromJson(item);
-                } catch (e) {
-                  debugPrint('Error parsing pulse: $e');
-                  return null;
-                }
-              } else {
-                return null;
-              }
-            })
-            .where((pulse) => pulse != null)
-            .cast<Pulse>()
-            .toList();
+      // Process the response which could be in different formats
+      List<Map<String, dynamic>> pulseDataList = [];
 
-        return pulses;
-      } else {
-        return [];
+      if (pulsesResponse is List) {
+        for (var item in pulsesResponse) {
+          if (item is Map<String, dynamic>) {
+            pulseDataList.add(item);
+          } else if (item is String) {
+            // Try to parse as JSON if it's a string
+            try {
+              final Map<String, dynamic> jsonData = jsonDecode(item);
+              pulseDataList.add(jsonData);
+            } catch (e) {
+              debugPrint('Error parsing JSON string: $e');
+            }
+          }
+        }
       }
+
+      debugPrint('Processed ${pulseDataList.length} joined pulse data items');
+
+      // Convert each item to a Pulse
+      final pulses = pulseDataList
+          .map((item) {
+            try {
+              return Pulse.fromJson(item);
+            } catch (e) {
+              debugPrint('Error parsing pulse: $e');
+              debugPrint('Problematic data: $item');
+              return null;
+            }
+          })
+          .where((pulse) => pulse != null)
+          .cast<Pulse>()
+          .toList();
+
+      return pulses;
     } catch (e) {
       debugPrint('Error fetching joined pulses: $e');
       rethrow;
