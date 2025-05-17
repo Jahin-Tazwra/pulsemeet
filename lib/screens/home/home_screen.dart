@@ -2,8 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:pulsemeet/screens/home/nearby_pulses_tab.dart';
 import 'package:pulsemeet/screens/home/my_pulses_tab.dart';
 import 'package:pulsemeet/screens/home/profile_tab.dart';
-import 'package:pulsemeet/screens/pulse/create_pulse_screen.dart';
-import 'package:pulsemeet/services/pulse_notifier.dart';
+import 'package:pulsemeet/screens/pulse/location_selection_screen.dart';
 
 /// Main home screen with bottom navigation
 class HomeScreen extends StatefulWidget {
@@ -54,7 +53,7 @@ class _HomeScreenState extends State<HomeScreen> {
           Navigator.push(
             context,
             MaterialPageRoute(
-              builder: (context) => const CreatePulseScreen(),
+              builder: (context) => const LocationSelectionScreen(),
             ),
           );
         },

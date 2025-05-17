@@ -8,7 +8,7 @@ import 'package:pulsemeet/services/pulse_notifier.dart';
 import 'package:pulsemeet/models/pulse.dart';
 import 'package:pulsemeet/widgets/pulse_card.dart';
 import 'package:pulsemeet/screens/pulse/pulse_details_screen.dart';
-import 'package:pulsemeet/screens/pulse/create_pulse_screen.dart';
+import 'package:pulsemeet/screens/pulse/location_selection_screen.dart';
 import 'package:pulsemeet/screens/home/nearby_pulses_map_view.dart';
 
 /// Tab showing nearby pulses
@@ -35,7 +35,8 @@ class _NearbyPulsesTabState extends State<NearbyPulsesTab> {
     super.initState();
     _getCurrentLocation();
 
-    // Listen for pulse creation events
+    // Listen for all pulse creation events to update the UI
+    // This ensures all pulses are visible regardless of distance
     _pulseCreatedSubscription =
         PulseNotifier().onPulseCreated.listen((newPulse) {
       debugPrint(
@@ -84,6 +85,13 @@ class _NearbyPulsesTabState extends State<NearbyPulsesTab> {
         _currentPosition = position;
       });
 
+      // Update the PulseNotifier with the current location
+      if (mounted) {
+        final pulseNotifier =
+            Provider.of<PulseNotifier>(context, listen: false);
+        pulseNotifier.updateUserLocationFromPosition(position);
+      }
+
       // Fetch nearby pulses
       await _fetchNearbyPulses();
     } catch (e) {
@@ -113,9 +121,12 @@ class _NearbyPulsesTabState extends State<NearbyPulsesTab> {
       debugPrint('Fetching nearby pulses from position: '
           '(${_currentPosition!.latitude}, ${_currentPosition!.longitude})');
 
+      // Use a moderate search radius by default (10km)
+      // This will show nearby pulses but not too many
       final pulses = await supabaseService.getNearbyPulses(
         _currentPosition!.latitude,
         _currentPosition!.longitude,
+        maxDistance: 10000, // 10km radius
       );
 
       debugPrint('Received ${pulses.length} pulses');
@@ -154,18 +165,17 @@ class _NearbyPulsesTabState extends State<NearbyPulsesTab> {
           Provider.of<SupabaseService>(context, listen: false);
 
       // Use a very large search radius to find all pulses
+      // 1,000,000 meters = 1,000 km, which should cover most reasonable distances
       final pulses = await supabaseService.getNearbyPulses(
         _currentPosition!.latitude,
         _currentPosition!.longitude,
-        maxDistance: 50000, // 50km radius to find more pulses
+        maxDistance: 1000000, // 1000km radius to find virtually all pulses
       );
 
       if (mounted) {
         setState(() {
-          // Only update if we found pulses
-          if (pulses.isNotEmpty) {
-            _nearbyPulses = pulses;
-          }
+          // Always update the pulses list, even if empty
+          _nearbyPulses = pulses;
           _isSearchingForClosestPulse = false;
         });
 
@@ -175,6 +185,15 @@ class _NearbyPulsesTabState extends State<NearbyPulsesTab> {
             const SnackBar(
               content: Text('No pulses found anywhere. Try creating one!'),
               duration: Duration(seconds: 3),
+            ),
+          );
+        } else {
+          // Show a message with the number of pulses found
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                  'Found ${pulses.length} pulses. Tap "Find Closest Pulse" to navigate through them.'),
+              duration: const Duration(seconds: 3),
             ),
           );
         }
@@ -202,9 +221,13 @@ class _NearbyPulsesTabState extends State<NearbyPulsesTab> {
       _isSearchingForClosestPulse = isLoading;
     });
 
-    // If we're done searching and there were no pulses found, try to find all pulses
-    if (!isLoading && _nearbyPulses.isEmpty) {
-      _findAllPulses();
+    // If we're starting the search and there are no pulses or only a few nearby,
+    // try to find all pulses regardless of distance
+    if (isLoading && _nearbyPulses.length < 2) {
+      // Delay slightly to allow the loading indicator to show
+      Future.delayed(const Duration(milliseconds: 100), () {
+        _findAllPulses();
+      });
     }
   }
 
@@ -310,7 +333,7 @@ class _NearbyPulsesTabState extends State<NearbyPulsesTab> {
             Navigator.push(
               context,
               MaterialPageRoute(
-                builder: (context) => const CreatePulseScreen(),
+                builder: (context) => const LocationSelectionScreen(),
               ),
             ).then((_) {
               // Refresh the list when returning from create screen
@@ -345,7 +368,7 @@ class _NearbyPulsesTabState extends State<NearbyPulsesTab> {
               currentLocation:
                   currentLatLng, // This might be null while loading
               onRefresh: _fetchNearbyPulses,
-              searchRadius: 5000, // Default search radius in meters
+              searchRadius: 10000, // Default search radius in meters (10km)
               onFindClosestPulse: _handleFindClosestPulse,
             ),
             // Only show the loading indicator if we don't have a location yet
@@ -365,7 +388,7 @@ class _NearbyPulsesTabState extends State<NearbyPulsesTab> {
               pulses: _nearbyPulses,
               currentLocation: currentLatLng,
               onRefresh: _fetchNearbyPulses,
-              searchRadius: 5000, // Default search radius in meters
+              searchRadius: 10000, // Default search radius in meters (10km)
               onFindClosestPulse: _handleFindClosestPulse,
             ),
             Center(
@@ -411,7 +434,7 @@ class _NearbyPulsesTabState extends State<NearbyPulsesTab> {
             pulses: _nearbyPulses,
             currentLocation: currentLatLng,
             onRefresh: _fetchNearbyPulses,
-            searchRadius: 5000, // Default search radius in meters
+            searchRadius: 10000, // Default search radius in meters (10km)
             onFindClosestPulse: _handleFindClosestPulse,
           ),
 

@@ -34,6 +34,12 @@ class _NearbyPulsesMapViewState extends State<NearbyPulsesMapView> {
   Set<Circle> _circles = {};
   bool _initialCameraPositionSet = false;
 
+  // List to track visited pulses in the current session
+  List<String> _visitedPulseIds = [];
+
+  // List of pulses sorted by distance from user
+  List<Pulse> _pulsesByDistance = [];
+
   @override
   void initState() {
     super.initState();
@@ -53,15 +59,51 @@ class _NearbyPulsesMapViewState extends State<NearbyPulsesMapView> {
         oldWidget.currentLocation != widget.currentLocation &&
             widget.currentLocation != null;
 
+    // Check if pulses changed
+    final pulsesChanged = widget.pulses != oldWidget.pulses;
+
     // Update map elements if pulses or location changed
-    if (widget.pulses != oldWidget.pulses || locationChanged) {
+    if (pulsesChanged || locationChanged) {
       _updateMapElements();
+    }
+
+    // Sort pulses by distance if pulses changed or location changed
+    if ((pulsesChanged || locationChanged) && widget.currentLocation != null) {
+      _sortPulsesByDistance();
     }
 
     // Move camera to user location if it just became available
     if (locationBecameAvailable && _mapController != null) {
       _animateToUserLocation();
     }
+  }
+
+  /// Sort pulses by distance from user's current location
+  void _sortPulsesByDistance() {
+    if (widget.currentLocation == null || widget.pulses.isEmpty) return;
+
+    // Create a copy of the pulses list
+    _pulsesByDistance = List<Pulse>.from(widget.pulses);
+
+    // Calculate distances for each pulse if not already set
+    for (final pulse in _pulsesByDistance) {
+      if (pulse.distanceMeters == null) {
+        final distance = _calculateDistance(
+          widget.currentLocation!,
+          pulse.location,
+        );
+        pulse.distanceMeters = distance * 1000; // Convert km to meters
+      }
+    }
+
+    // Sort by distance
+    _pulsesByDistance.sort((a, b) {
+      final distA = a.distanceMeters ?? double.infinity;
+      final distB = b.distanceMeters ?? double.infinity;
+      return distA.compareTo(distB);
+    });
+
+    debugPrint('Sorted ${_pulsesByDistance.length} pulses by distance');
   }
 
   void _updateMapElements() async {
@@ -207,7 +249,7 @@ class _NearbyPulsesMapViewState extends State<NearbyPulsesMapView> {
     _initialCameraPositionSet = true;
   }
 
-  /// Find the closest pulse to the user's current location and animate to it
+  /// Find the next closest pulse to the user's current location and animate to it
   void findClosestPulse() {
     if (widget.currentLocation == null || widget.pulses.isEmpty) {
       // If there's no current location or no pulses, we can't find the closest one
@@ -217,34 +259,60 @@ class _NearbyPulsesMapViewState extends State<NearbyPulsesMapView> {
     // Notify parent that we're starting the search
     widget.onFindClosestPulse?.call(true);
 
-    // Find the closest pulse by calculating distance to each pulse
-    Pulse? closestPulse;
-    double closestDistance = double.infinity;
+    // Make sure pulses are sorted by distance
+    if (_pulsesByDistance.isEmpty) {
+      _sortPulsesByDistance();
+    }
 
-    for (final pulse in widget.pulses) {
-      final distance = _calculateDistance(
-        widget.currentLocation!,
-        pulse.location,
-      );
+    // If we have no pulses after sorting, notify parent and return
+    if (_pulsesByDistance.isEmpty) {
+      widget.onFindClosestPulse?.call(false);
+      return;
+    }
 
-      if (distance < closestDistance) {
-        closestDistance = distance;
-        closestPulse = pulse;
+    // Find the next pulse to show based on visited pulses
+    Pulse nextPulse = _getNextPulseToShow();
+
+    // Add this pulse to the visited list
+    if (!_visitedPulseIds.contains(nextPulse.id)) {
+      _visitedPulseIds.add(nextPulse.id);
+    }
+
+    // Animate to the selected pulse
+    _animateToPulse(nextPulse);
+  }
+
+  /// Get the next pulse to show based on visited pulses
+  Pulse _getNextPulseToShow() {
+    // If we've visited all pulses or none, start from the closest one
+    if (_visitedPulseIds.isEmpty ||
+        _visitedPulseIds.length >= _pulsesByDistance.length) {
+      // If we've visited all pulses, reset the visited list and start over
+      if (_visitedPulseIds.length >= _pulsesByDistance.length) {
+        _visitedPulseIds.clear();
+      }
+
+      // Return the closest pulse
+      return _pulsesByDistance.first;
+    }
+
+    // Find the first pulse that hasn't been visited yet
+    for (final pulse in _pulsesByDistance) {
+      if (!_visitedPulseIds.contains(pulse.id)) {
+        return pulse;
       }
     }
 
-    // If we found a closest pulse, animate to it
-    if (closestPulse != null) {
-      _animateToClosestPulse(closestPulse);
-    } else {
-      // Notify parent that we're done with the search
-      widget.onFindClosestPulse?.call(false);
-    }
+    // Fallback to the closest pulse if something went wrong
+    return _pulsesByDistance.first;
   }
 
-  /// Animate the camera to the closest pulse
-  void _animateToClosestPulse(Pulse pulse) {
+  /// Animate the camera to a specific pulse
+  void _animateToPulse(Pulse pulse) {
     if (_mapController == null) return;
+
+    debugPrint(
+        'Animating to pulse: ${pulse.id} - ${pulse.title} at distance ${pulse.formattedDistance}');
 
     // Animate to the pulse location
     _mapController!
@@ -414,7 +482,7 @@ class _NearbyPulsesMapViewState extends State<NearbyPulsesMapView> {
                 ),
                 icon: const Icon(Icons.near_me),
                 label: const Text(
-                  'Find Closest Pulse',
+                  'Find Pulse',
                   style: TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.bold,

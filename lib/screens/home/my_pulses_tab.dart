@@ -30,7 +30,9 @@ class _MyPulsesTabState extends State<MyPulsesTab>
     _tabController = TabController(length: 2, vsync: this);
     _fetchMyPulses();
 
-    // Listen for pulse creation events
+    // Listen for all pulse creation events
+    // We use onPulseCreated instead of onPulseCreatedNearby because we want to
+    // show all pulses in the My Pulses tab regardless of distance
     _pulseCreatedSubscription =
         PulseNotifier().onPulseCreated.listen((newPulse) {
       debugPrint('MyPulsesTab: Received pulse created event: ${newPulse.id}');

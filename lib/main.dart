@@ -9,6 +9,7 @@ import 'config/env_config.dart';
 import 'config/supabase_config.dart';
 import 'services/supabase_service.dart';
 import 'services/pulse_notifier.dart';
+import 'services/notification_service.dart';
 import 'screens/splash_screen.dart';
 import 'screens/auth/auth_screen.dart';
 import 'screens/home/home_screen.dart';
@@ -25,14 +26,16 @@ void main() async {
   // Initialize Supabase
   await SupabaseConfig.initialize();
 
-  // Create a PulseNotifier instance to ensure it's initialized
+  // Create service instances to ensure they're initialized
   final pulseNotifier = PulseNotifier();
+  final notificationService = NotificationService();
 
   runApp(
     MultiProvider(
       providers: [
         Provider(create: (_) => SupabaseService()),
         Provider(create: (_) => pulseNotifier),
+        Provider(create: (_) => notificationService),
       ],
       child: const MyApp(),
     ),
