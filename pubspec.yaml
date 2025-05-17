@@ -23,6 +23,7 @@ dependencies:
   # Location & Maps
   geolocator: ^9.0.2
   google_maps_flutter: ^2.5.0
+  geocoding: ^2.1.1
   # Removed geofence_service due to compatibility issues with Android Gradle Plugin
 
   # UI/UX & Animations
@@ -39,6 +40,10 @@ dependencies:
   image_picker: ^1.0.4
   image_cropper: ^9.1.0
   path_provider: ^2.1.2
+  video_player: ^2.8.2
+  video_compress: ^3.1.2
+  flutter_sound: ^9.2.13
+  audio_session: ^0.1.18
 
   # Permission Handling
   permission_handler: ^11.3.0
