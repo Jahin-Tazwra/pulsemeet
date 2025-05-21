@@ -2,9 +2,13 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:provider/provider.dart';
+import 'package:pulsemeet/controllers/map_theme_controller.dart';
 import 'package:pulsemeet/models/pulse.dart';
+import 'package:pulsemeet/providers/theme_provider.dart';
 import 'package:pulsemeet/screens/pulse/pulse_details_screen.dart';
 import 'package:pulsemeet/widgets/pulse_marker.dart';
+import 'package:pulsemeet/utils/map_styles.dart';
 
 /// Widget that displays nearby pulses on a Google Map
 class NearbyPulsesMapView extends StatefulWidget {
@@ -219,6 +223,10 @@ class _NearbyPulsesMapViewState extends State<NearbyPulsesMapView> {
   void _onMapCreated(GoogleMapController controller) {
     _mapController = controller;
 
+    // Register the controller with the MapThemeController
+    final themeProvider = Provider.of<ThemeProvider>(context, listen: false);
+    themeProvider.mapThemeController.registerController(controller, context);
+
     // Update map elements when map is created
     _updateMapElements();
 
@@ -229,6 +237,16 @@ class _NearbyPulsesMapViewState extends State<NearbyPulsesMapView> {
         _animateToUserLocation();
       });
     }
+  }
+
+  @override
+  void dispose() {
+    // Unregister the controller when the widget is disposed
+    if (_mapController != null) {
+      final themeProvider = Provider.of<ThemeProvider>(context, listen: false);
+      themeProvider.mapThemeController.unregisterController(_mapController!);
+    }
+    super.dispose();
   }
 
   /// Animate the camera to the user's current location
@@ -425,18 +443,21 @@ class _NearbyPulsesMapViewState extends State<NearbyPulsesMapView> {
         // Loading indicator when waiting for location
         if (widget.currentLocation == null && !_initialCameraPositionSet)
           Container(
-            color:
-                Colors.white.withAlpha(230), // Semi-transparent white overlay
-            child: const Center(
+            color: Theme.of(context)
+                .colorScheme
+                .surface
+                .withAlpha(230), // Semi-transparent surface color
+            child: Center(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  CircularProgressIndicator(color: Color(0xFF1E88E5)),
-                  SizedBox(height: 16),
+                  CircularProgressIndicator(
+                      color: Theme.of(context).colorScheme.primary),
+                  const SizedBox(height: 16),
                   Text(
                     'Getting your location...',
                     style: TextStyle(
-                      color: Color(0xFF1E88E5),
+                      color: Theme.of(context).colorScheme.primary,
                       fontSize: 16,
                       fontWeight: FontWeight.bold,
                     ),

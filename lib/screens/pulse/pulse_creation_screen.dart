@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import 'package:pulsemeet/services/supabase_service.dart';
 import 'package:pulsemeet/services/pulse_notifier.dart';
 import 'package:pulsemeet/models/pulse.dart';
+import 'package:pulsemeet/utils/map_styles.dart';
 
 /// Activity option model
 class ActivityOption {

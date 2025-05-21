@@ -4,9 +4,11 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:pulsemeet/controllers/map_theme_controller.dart';
 import 'package:pulsemeet/models/pulse.dart';
 import 'package:pulsemeet/models/profile.dart';
 import 'package:pulsemeet/models/waiting_list_entry.dart';
+import 'package:pulsemeet/providers/theme_provider.dart';
 import 'package:pulsemeet/services/supabase_service.dart';
 import 'package:pulsemeet/services/pulse_participant_service.dart';
 import 'package:pulsemeet/services/waiting_list_service.dart';
@@ -14,6 +16,7 @@ import 'package:pulsemeet/services/profile_service.dart';
 import 'package:pulsemeet/services/rating_service.dart';
 import 'package:pulsemeet/screens/pulse/pulse_chat_screen.dart';
 import 'package:pulsemeet/screens/profile/user_profile_screen.dart';
+import 'package:pulsemeet/utils/map_styles.dart';
 import 'package:pulsemeet/utils/map_utils.dart';
 import 'package:pulsemeet/widgets/capacity_indicator.dart';
 import 'package:pulsemeet/widgets/waiting_list_info.dart';
@@ -200,6 +203,14 @@ class _PulseDetailsScreenState extends State<PulseDetailsScreen> {
   Future<void> _disposeMapController() async {
     if (_mapControllerCompleter.isCompleted) {
       final controller = await _mapControllerCompleter.future;
+
+      // Unregister the controller from the MapThemeController
+      if (mounted) {
+        final themeProvider =
+            Provider.of<ThemeProvider>(context, listen: false);
+        themeProvider.mapThemeController.unregisterController(controller);
+      }
+
       controller.dispose();
     }
   }
@@ -353,6 +364,10 @@ class _PulseDetailsScreenState extends State<PulseDetailsScreen> {
     if (!_mapControllerCompleter.isCompleted) {
       // Complete the completer with the controller
       _mapControllerCompleter.complete(controller);
+
+      // Register the controller with the MapThemeController
+      final themeProvider = Provider.of<ThemeProvider>(context, listen: false);
+      themeProvider.mapThemeController.registerController(controller, context);
 
       // Get the exact pulse location
       final pulseLocation = widget.pulse.location;
@@ -773,7 +788,9 @@ class _PulseDetailsScreenState extends State<PulseDetailsScreen> {
               height: 250,
               width: double.infinity,
               decoration: BoxDecoration(
-                color: Colors.grey[200],
+                color: Theme.of(context).brightness == Brightness.dark
+                    ? const Color(0xFF212121) // Dark gray for dark mode
+                    : Colors.grey[200], // Light gray for light mode
                 borderRadius:
                     const BorderRadius.vertical(bottom: Radius.circular(12)),
               ),
@@ -848,7 +865,10 @@ class _PulseDetailsScreenState extends State<PulseDetailsScreen> {
                       Positioned.fill(
                         child: Center(
                           child: _PulsingCircle(
-                            color: Colors.red.withAlpha(153),
+                            color: Theme.of(context)
+                                .colorScheme
+                                .error
+                                .withAlpha(153),
                           ),
                         ),
                       ),
@@ -866,8 +886,8 @@ class _PulseDetailsScreenState extends State<PulseDetailsScreen> {
                           });
                           _animateToPosition(widget.pulse.location);
                         },
-                        backgroundColor: Colors.white,
-                        foregroundColor: Colors.blue,
+                        backgroundColor: Theme.of(context).colorScheme.surface,
+                        foregroundColor: Theme.of(context).colorScheme.primary,
                         tooltip: 'Center on Pulse',
                         child: const Icon(Icons.center_focus_strong),
                       ),
@@ -879,12 +899,12 @@ class _PulseDetailsScreenState extends State<PulseDetailsScreen> {
                       left: 16,
                       child: Container(
                         decoration: BoxDecoration(
-                          color: Colors.white,
+                          color: Theme.of(context).colorScheme.surface,
                           borderRadius: BorderRadius.circular(8),
                           boxShadow: [
                             BoxShadow(
                               color:
-                                  Colors.black.withAlpha(51), // 0.2 * 255 = 51
+                                  Theme.of(context).shadowColor.withAlpha(51),
                               blurRadius: 4,
                               offset: const Offset(0, 2),
                             ),
@@ -901,20 +921,25 @@ class _PulseDetailsScreenState extends State<PulseDetailsScreen> {
                               _animateToPosition(widget.pulse.location);
                             },
                             borderRadius: BorderRadius.circular(8),
-                            child: const Padding(
-                              padding: EdgeInsets.symmetric(
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(
                                   horizontal: 12, vertical: 8),
                               child: Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
                                   Icon(Icons.location_on,
-                                      color: Colors.red, size: 16),
-                                  SizedBox(width: 4),
+                                      color:
+                                          Theme.of(context).colorScheme.error,
+                                      size: 16),
+                                  const SizedBox(width: 4),
                                   Text(
                                     'Show Pulse Location',
                                     style: TextStyle(
                                       fontWeight: FontWeight.bold,
                                       fontSize: 12,
+                                      color: Theme.of(context)
+                                          .colorScheme
+                                          .onSurface,
                                     ),
                                   ),
                                 ],
@@ -1010,10 +1035,15 @@ class _PulseDetailsScreenState extends State<PulseDetailsScreen> {
                         margin: const EdgeInsets.only(bottom: 16),
                         padding: const EdgeInsets.all(12),
                         decoration: BoxDecoration(
-                          color: Theme.of(context)
-                              .colorScheme
-                              .primary
-                              .withOpacity(0.1),
+                          color: Theme.of(context).brightness == Brightness.dark
+                              ? Theme.of(context)
+                                  .colorScheme
+                                  .primary
+                                  .withAlpha(25)
+                              : Theme.of(context)
+                                  .colorScheme
+                                  .primary
+                                  .withAlpha(25),
                           borderRadius: BorderRadius.circular(8),
                         ),
                         child: Column(

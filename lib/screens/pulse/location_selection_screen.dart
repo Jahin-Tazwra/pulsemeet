@@ -2,6 +2,9 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:provider/provider.dart';
+import 'package:pulsemeet/controllers/map_theme_controller.dart';
+import 'package:pulsemeet/providers/theme_provider.dart';
 import 'package:pulsemeet/screens/pulse/pulse_creation_screen.dart';
 import 'package:pulsemeet/services/places_service.dart';
 
@@ -41,7 +44,14 @@ class _LocationSelectionScreenState extends State<LocationSelectionScreen> {
   void dispose() {
     _searchController.removeListener(_onSearchChanged);
     _searchController.dispose();
-    _mapController?.dispose();
+
+    // Unregister the controller from the MapThemeController
+    if (_mapController != null) {
+      final themeProvider = Provider.of<ThemeProvider>(context, listen: false);
+      themeProvider.mapThemeController.unregisterController(_mapController!);
+      _mapController!.dispose();
+    }
+
     _debounce?.cancel();
     super.dispose();
   }
@@ -313,6 +323,13 @@ class _LocationSelectionScreenState extends State<LocationSelectionScreen> {
             onLongPress: _onMapLongPress,
             onMapCreated: (controller) {
               _mapController = controller;
+
+              // Register the controller with the MapThemeController
+              final themeProvider =
+                  Provider.of<ThemeProvider>(context, listen: false);
+              themeProvider.mapThemeController
+                  .registerController(controller, context);
+
               if (_selectedLocation != null) {
                 _updateMarkers();
               }

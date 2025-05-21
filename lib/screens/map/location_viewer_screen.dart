@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:pulsemeet/controllers/map_theme_controller.dart';
+import 'package:pulsemeet/providers/theme_provider.dart';
+import 'package:pulsemeet/utils/map_styles.dart';
 
 /// A screen for viewing a location on a map
 class LocationViewerScreen extends StatefulWidget {
@@ -24,13 +28,23 @@ class LocationViewerScreen extends StatefulWidget {
 class _LocationViewerScreenState extends State<LocationViewerScreen> {
   GoogleMapController? _mapController;
   Set<Marker> _markers = {};
-  
+
   @override
   void initState() {
     super.initState();
     _updateMarkers();
   }
-  
+
+  @override
+  void dispose() {
+    // Unregister the controller when the widget is disposed
+    if (_mapController != null) {
+      final themeProvider = Provider.of<ThemeProvider>(context, listen: false);
+      themeProvider.mapThemeController.unregisterController(_mapController!);
+    }
+    super.dispose();
+  }
+
   /// Update the markers on the map
   void _updateMarkers() {
     setState(() {
@@ -45,11 +59,12 @@ class _LocationViewerScreenState extends State<LocationViewerScreen> {
       };
     });
   }
-  
+
   /// Open the location in Google Maps
   Future<void> _openInGoogleMaps() async {
-    final url = 'https://www.google.com/maps/search/?api=1&query=${widget.location.latitude},${widget.location.longitude}';
-    
+    final url =
+        'https://www.google.com/maps/search/?api=1&query=${widget.location.latitude},${widget.location.longitude}';
+
     if (await canLaunchUrl(Uri.parse(url))) {
       await launchUrl(Uri.parse(url));
     } else {
@@ -62,11 +77,12 @@ class _LocationViewerScreenState extends State<LocationViewerScreen> {
       }
     }
   }
-  
+
   /// Get directions to the location
   Future<void> _getDirections() async {
-    final url = 'https://www.google.com/maps/dir/?api=1&destination=${widget.location.latitude},${widget.location.longitude}';
-    
+    final url =
+        'https://www.google.com/maps/dir/?api=1&destination=${widget.location.latitude},${widget.location.longitude}';
+
     if (await canLaunchUrl(Uri.parse(url))) {
       await launchUrl(Uri.parse(url));
     } else {
@@ -79,7 +95,7 @@ class _LocationViewerScreenState extends State<LocationViewerScreen> {
       }
     }
   }
-  
+
   @override
   Widget build(BuildContext context) {
     // Check if live location has expired
@@ -87,13 +103,12 @@ class _LocationViewerScreenState extends State<LocationViewerScreen> {
     if (isLive && widget.expiresAt != null) {
       isLive = DateTime.now().isBefore(widget.expiresAt!);
     }
-    
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Location'),
         actions: [
-          if (isLive)
-            _buildLiveIndicator(),
+          if (isLive) _buildLiveIndicator(),
         ],
       ),
       body: Stack(
@@ -107,13 +122,19 @@ class _LocationViewerScreenState extends State<LocationViewerScreen> {
             markers: _markers,
             onMapCreated: (controller) {
               _mapController = controller;
+
+              // Register the controller with the MapThemeController
+              final themeProvider =
+                  Provider.of<ThemeProvider>(context, listen: false);
+              themeProvider.mapThemeController
+                  .registerController(controller, context);
             },
             myLocationEnabled: true,
             myLocationButtonEnabled: true,
             mapToolbarEnabled: false,
             zoomControlsEnabled: true,
           ),
-          
+
           // Address card
           if (widget.address != null)
             Positioned(
@@ -122,21 +143,28 @@ class _LocationViewerScreenState extends State<LocationViewerScreen> {
               right: 16.0,
               child: Card(
                 elevation: 4.0,
+                color: Theme.of(context).cardColor,
                 child: Padding(
                   padding: const EdgeInsets.all(16.0),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      const Text(
+                      Text(
                         'Address',
                         style: TextStyle(
                           fontWeight: FontWeight.bold,
                           fontSize: 16.0,
+                          color: Theme.of(context).colorScheme.onSurface,
                         ),
                       ),
                       const SizedBox(height: 8.0),
-                      Text(widget.address!),
+                      Text(
+                        widget.address!,
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.onSurface,
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -163,7 +191,7 @@ class _LocationViewerScreenState extends State<LocationViewerScreen> {
       ),
     );
   }
-  
+
   /// Build the live indicator
   Widget _buildLiveIndicator() {
     // Calculate remaining time if expiresAt is available
@@ -171,11 +199,11 @@ class _LocationViewerScreenState extends State<LocationViewerScreen> {
     if (widget.expiresAt != null) {
       final now = DateTime.now();
       final remaining = widget.expiresAt!.difference(now);
-      
+
       if (remaining.isNegative) {
         return const SizedBox.shrink();
       }
-      
+
       if (remaining.inHours > 0) {
         timeText = '${remaining.inHours}h ${remaining.inMinutes % 60}m';
       } else if (remaining.inMinutes > 0) {
@@ -184,7 +212,7 @@ class _LocationViewerScreenState extends State<LocationViewerScreen> {
         timeText = '${remaining.inSeconds}s';
       }
     }
-    
+
     return Container(
       margin: const EdgeInsets.symmetric(
         vertical: 12.0,

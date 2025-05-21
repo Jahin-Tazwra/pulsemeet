@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:pulsemeet/controllers/map_theme_controller.dart';
+import 'package:pulsemeet/providers/theme_provider.dart';
 import 'package:pulsemeet/services/supabase_service.dart';
 import 'package:pulsemeet/services/pulse_notifier.dart';
 import 'package:pulsemeet/models/pulse.dart';
@@ -43,6 +45,14 @@ class _CreatePulseScreenState extends State<CreatePulseScreen> {
     _descriptionController.dispose();
     _emojiController.dispose();
     _maxParticipantsController.dispose();
+
+    // Unregister the controller from the MapThemeController
+    if (_mapController != null) {
+      final themeProvider = Provider.of<ThemeProvider>(context, listen: false);
+      themeProvider.mapThemeController.unregisterController(_mapController!);
+      _mapController!.dispose();
+    }
+
     super.dispose();
   }
 
@@ -363,6 +373,14 @@ class _CreatePulseScreenState extends State<CreatePulseScreen> {
                           },
                           onMapCreated: (GoogleMapController controller) {
                             _mapController = controller;
+
+                            // Register the controller with the MapThemeController
+                            final themeProvider = Provider.of<ThemeProvider>(
+                                context,
+                                listen: false);
+                            themeProvider.mapThemeController
+                                .registerController(controller, context);
+
                             if (_selectedLocation != null) {
                               _updateMarkers();
                             }

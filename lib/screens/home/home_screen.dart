@@ -26,14 +26,17 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     return Scaffold(
       body: _tabs[_selectedIndex],
       bottomNavigationBar: Container(
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: theme.colorScheme.surface,
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withAlpha(15),
+              color: theme.shadowColor.withAlpha(15),
               blurRadius: 8,
               offset: const Offset(0, -2),
             ),
@@ -48,10 +51,12 @@ class _HomeScreenState extends State<HomeScreen> {
           },
           // Use theme settings
           type: BottomNavigationBarType.fixed,
-          backgroundColor: Colors.white,
-          selectedItemColor: const Color(0xFF1E88E5), // Blue for selected items
-          unselectedItemColor:
-              const Color(0xFF9E9E9E), // Grey for unselected items
+          backgroundColor: theme.colorScheme.surface,
+          selectedItemColor:
+              theme.colorScheme.primary, // Primary color for selected items
+          unselectedItemColor: isDarkMode
+              ? Colors.white60 // White with 60% opacity for dark mode
+              : const Color(0xFF9E9E9E), // Grey for light mode
           selectedLabelStyle: const TextStyle(fontWeight: FontWeight.bold),
           unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.normal),
           selectedIconTheme: const IconThemeData(size: 28),
@@ -87,8 +92,10 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           );
         },
-        backgroundColor: const Color(0xFF1E88E5), // Blue background
-        foregroundColor: Colors.white, // White icon
+        backgroundColor:
+            theme.colorScheme.primary, // Use primary color from theme
+        foregroundColor:
+            theme.colorScheme.onPrimary, // Use on-primary color from theme
         shape: const CircleBorder(),
         elevation: 4,
         child: const Icon(Icons.add, size: 32),

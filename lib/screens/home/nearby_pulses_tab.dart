@@ -482,18 +482,21 @@ class _NearbyPulsesTabState extends State<NearbyPulsesTab> {
           // Show loading indicator when searching for closest pulse
           if (_isSearchingForClosestPulse)
             Container(
-              color:
-                  Colors.white.withAlpha(230), // Semi-transparent white overlay
-              child: const Center(
+              color: Theme.of(context)
+                  .colorScheme
+                  .surface
+                  .withAlpha(230), // Semi-transparent surface color
+              child: Center(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    CircularProgressIndicator(color: Color(0xFF1E88E5)),
-                    SizedBox(height: 16),
+                    CircularProgressIndicator(
+                        color: Theme.of(context).colorScheme.primary),
+                    const SizedBox(height: 16),
                     Text(
                       'Finding closest pulse...',
                       style: TextStyle(
-                        color: Color(0xFF1E88E5),
+                        color: Theme.of(context).colorScheme.primary,
                         fontSize: 16,
                         fontWeight: FontWeight.bold,
                       ),

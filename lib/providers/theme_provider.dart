@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:pulsemeet/controllers/map_theme_controller.dart';
 import 'package:pulsemeet/models/profile.dart' as app_models;
 import 'package:pulsemeet/services/supabase_service.dart';
 
 /// Provider for managing the app's theme
 class ThemeProvider extends ChangeNotifier {
   final SupabaseService _supabaseService;
+  final MapThemeController _mapThemeController = MapThemeController();
   app_models.ThemeMode _themeMode = app_models.ThemeMode.system;
   bool _isLoading = true;
 
@@ -12,6 +14,9 @@ class ThemeProvider extends ChangeNotifier {
   ThemeProvider(this._supabaseService) {
     _loadThemePreference();
   }
+
+  /// Get the map theme controller
+  MapThemeController get mapThemeController => _mapThemeController;
 
   /// Get the current theme mode
   app_models.ThemeMode get themeMode => _themeMode;
@@ -69,6 +74,18 @@ class ThemeProvider extends ChangeNotifier {
       // If there's an error, revert to the previous theme
       _loadThemePreference();
     }
+  }
+
+  @override
+  void notifyListeners() {
+    super.notifyListeners();
+    // We can't update the map theme here directly because we don't have a BuildContext
+    // The widgets using this provider will call updateMapTheme when they rebuild
+  }
+
+  /// Update map theme based on current context
+  void updateMapTheme(BuildContext context) {
+    _mapThemeController.updateTheme(context);
   }
 
   /// Refresh the theme preference from the user's profile

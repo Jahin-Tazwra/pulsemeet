@@ -120,10 +120,16 @@ class _MyAppState extends State<MyApp> {
         Provider.of<SupabaseService>(context, listen: false);
     final themeProvider = Provider.of<ThemeProvider>(context);
 
+    // Update map theme when app rebuilds due to theme changes
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      themeProvider.updateMapTheme(context);
+    });
+
     return MaterialApp(
       title: 'PulseMeet',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
+        useMaterial3: true,
         colorScheme: ColorScheme.fromSeed(
           seedColor: const Color(0xFF1E88E5), // Blue as seed color
           primary: const Color(0xFF1E88E5), // Blue as primary color
@@ -135,7 +141,7 @@ class _MyAppState extends State<MyApp> {
           onSurface: const Color(0xFF212121), // Dark grey for text on surface
           surfaceTint: const Color(0xFF1E88E5), // Blue tint
         ),
-        useMaterial3: true,
+        scaffoldBackgroundColor: Colors.white,
         fontFamily: 'Roboto',
 
         // Button themes
@@ -203,6 +209,7 @@ class _MyAppState extends State<MyApp> {
         ),
       ),
       darkTheme: ThemeData(
+        useMaterial3: true,
         colorScheme: ColorScheme.fromSeed(
           seedColor: const Color(0xFF1E88E5), // Blue as seed color
           primary: const Color(0xFF1E88E5), // Blue primary color
@@ -217,9 +224,8 @@ class _MyAppState extends State<MyApp> {
           onSecondary: Colors.white, // White text on secondary
           surfaceTint: const Color(0xFF1E88E5), // Blue tint
         ),
-        useMaterial3: true,
-        fontFamily: 'Roboto',
         scaffoldBackgroundColor: const Color(0xFF121212), // Black background
+        fontFamily: 'Roboto',
         canvasColor:
             const Color(0xFF121212), // Black background for dialogs, etc.
 
