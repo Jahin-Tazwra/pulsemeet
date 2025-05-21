@@ -84,11 +84,25 @@ class AuthScreen extends StatelessWidget {
               OutlinedButton.icon(
                 onPressed: () async {
                   try {
+                    // Show loading indicator
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Redirecting to Google Sign-In...'),
+                        duration: Duration(seconds: 2),
+                      ),
+                    );
+
                     await supabaseService.signInWithGoogle();
+
+                    // Note: The actual sign-in completion will be handled by the auth state listener
+                    // in the app's main widget, which will navigate to the home screen when signed in
                   } catch (e) {
                     if (context.mounted) {
                       ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('Error: ${e.toString()}')),
+                        SnackBar(
+                          content: Text('Error: ${e.toString()}'),
+                          backgroundColor: Colors.red,
+                        ),
                       );
                     }
                   }

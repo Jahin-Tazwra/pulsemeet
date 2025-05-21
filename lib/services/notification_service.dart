@@ -1,3 +1,5 @@
+import 'dart:convert';
+import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
@@ -7,7 +9,6 @@ import 'package:pulsemeet/models/profile.dart';
 import 'package:pulsemeet/models/pulse.dart';
 import 'package:pulsemeet/services/pulse_participant_service.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'dart:math' as math;
 
 /// A service to handle notifications for pulses
 class NotificationService {
@@ -296,6 +297,292 @@ class NotificationService {
       } catch (e) {
         debugPrint('Error recording mention: $e');
       }
+    }
+  }
+
+  /// Show a notification for a new pulse from a favorite host
+  Future<void> showFavoriteHostPulseNotification(Pulse pulse) async {
+    // Get the user's notification settings
+    final userId = _supabase.auth.currentUser?.id;
+    if (userId == null) return;
+
+    try {
+      final response = await _supabase
+          .from('profiles')
+          .select('notification_settings')
+          .eq('id', userId)
+          .single();
+
+      final notificationSettings = NotificationSettings.fromJson(
+          response['notification_settings'] is String
+              ? jsonDecode(response['notification_settings'])
+              : response['notification_settings']);
+
+      // Check if favorite host notifications are enabled
+      if (!notificationSettings.pushNotifications ||
+          !notificationSettings.favoriteHostNotifications) {
+        return;
+      }
+
+      // Create notification content
+      final hostName = pulse.creatorName ?? 'A favorite host';
+      final notificationTitle = '$hostName created a new pulse';
+      final notificationBody = '${pulse.title}: ${pulse.description}';
+
+      // Show notification
+      const AndroidNotificationDetails androidPlatformChannelSpecifics =
+          AndroidNotificationDetails(
+        'favorite_hosts_channel',
+        'Favorite Hosts',
+        channelDescription: 'Notifications for favorite hosts',
+        importance: Importance.high,
+        priority: Priority.high,
+        showWhen: true,
+      );
+
+      const DarwinNotificationDetails iOSPlatformChannelSpecifics =
+          DarwinNotificationDetails(
+        presentAlert: true,
+        presentBadge: true,
+        presentSound: true,
+      );
+
+      const NotificationDetails platformChannelSpecifics = NotificationDetails(
+        android: androidPlatformChannelSpecifics,
+        iOS: iOSPlatformChannelSpecifics,
+      );
+
+      await _flutterLocalNotificationsPlugin.show(
+        'favorite_host_${pulse.id}'.hashCode,
+        notificationTitle,
+        notificationBody,
+        platformChannelSpecifics,
+        payload: 'favorite_host_pulse:${pulse.id}',
+      );
+    } catch (e) {
+      debugPrint('Error showing favorite host pulse notification: $e');
+    }
+  }
+
+  /// Send a notification for a new connection request
+  Future<void> sendConnectionRequestNotification(String receiverId) async {
+    try {
+      // Get the requester's profile
+      final userId = _supabase.auth.currentUser?.id;
+      if (userId == null) return;
+
+      final requesterResponse = await _supabase
+          .from('profiles')
+          .select('username, display_name')
+          .eq('id', userId)
+          .single();
+
+      final requesterName = requesterResponse['display_name'] ??
+          requesterResponse['username'] ??
+          'Someone';
+
+      // Get the receiver's notification settings
+      final receiverResponse = await _supabase
+          .from('profiles')
+          .select('notification_settings')
+          .eq('id', receiverId)
+          .single();
+
+      final notificationSettings = NotificationSettings.fromJson(
+          receiverResponse['notification_settings'] is String
+              ? jsonDecode(receiverResponse['notification_settings'])
+              : receiverResponse['notification_settings']);
+
+      // Check if push notifications are enabled
+      if (!notificationSettings.pushNotifications) {
+        return;
+      }
+
+      // Create notification content
+      const notificationTitle = 'New Connection Request';
+      final notificationBody = '$requesterName wants to connect with you';
+
+      // Show notification
+      const AndroidNotificationDetails androidPlatformChannelSpecifics =
+          AndroidNotificationDetails(
+        'connections_channel',
+        'Connections',
+        channelDescription: 'Notifications for connection requests',
+        importance: Importance.high,
+        priority: Priority.high,
+        showWhen: true,
+      );
+
+      const DarwinNotificationDetails iOSPlatformChannelSpecifics =
+          DarwinNotificationDetails(
+        presentAlert: true,
+        presentBadge: true,
+        presentSound: true,
+      );
+
+      const NotificationDetails platformChannelSpecifics = NotificationDetails(
+        android: androidPlatformChannelSpecifics,
+        iOS: iOSPlatformChannelSpecifics,
+      );
+
+      await _flutterLocalNotificationsPlugin.show(
+        'connection_request_${userId}_$receiverId'.hashCode,
+        notificationTitle,
+        notificationBody,
+        platformChannelSpecifics,
+        payload: 'connection_request:$userId',
+      );
+    } catch (e) {
+      debugPrint('Error sending connection request notification: $e');
+    }
+  }
+
+  /// Send a notification for an accepted connection request
+  Future<void> sendConnectionAcceptedNotification(String requesterId) async {
+    try {
+      // Get the receiver's profile
+      final userId = _supabase.auth.currentUser?.id;
+      if (userId == null) return;
+
+      final receiverResponse = await _supabase
+          .from('profiles')
+          .select('username, display_name')
+          .eq('id', userId)
+          .single();
+
+      final receiverName = receiverResponse['display_name'] ??
+          receiverResponse['username'] ??
+          'Someone';
+
+      // Get the requester's notification settings
+      final requesterResponse = await _supabase
+          .from('profiles')
+          .select('notification_settings')
+          .eq('id', requesterId)
+          .single();
+
+      final notificationSettings = NotificationSettings.fromJson(
+          requesterResponse['notification_settings'] is String
+              ? jsonDecode(requesterResponse['notification_settings'])
+              : requesterResponse['notification_settings']);
+
+      // Check if push notifications are enabled
+      if (!notificationSettings.pushNotifications) {
+        return;
+      }
+
+      // Create notification content
+      const notificationTitle = 'Connection Request Accepted';
+      final notificationBody = '$receiverName accepted your connection request';
+
+      // Show notification
+      const AndroidNotificationDetails androidPlatformChannelSpecifics =
+          AndroidNotificationDetails(
+        'connections_channel',
+        'Connections',
+        channelDescription: 'Notifications for connection requests',
+        importance: Importance.high,
+        priority: Priority.high,
+        showWhen: true,
+      );
+
+      const DarwinNotificationDetails iOSPlatformChannelSpecifics =
+          DarwinNotificationDetails(
+        presentAlert: true,
+        presentBadge: true,
+        presentSound: true,
+      );
+
+      const NotificationDetails platformChannelSpecifics = NotificationDetails(
+        android: androidPlatformChannelSpecifics,
+        iOS: iOSPlatformChannelSpecifics,
+      );
+
+      await _flutterLocalNotificationsPlugin.show(
+        'connection_accepted_${userId}_$requesterId'.hashCode,
+        notificationTitle,
+        notificationBody,
+        platformChannelSpecifics,
+        payload: 'connection_accepted:$userId',
+      );
+    } catch (e) {
+      debugPrint('Error sending connection accepted notification: $e');
+    }
+  }
+
+  /// Send a notification for a new direct message
+  Future<void> sendDirectMessageNotification(
+    String receiverId,
+    String messageContent,
+    String senderId,
+  ) async {
+    try {
+      // Get the sender's profile
+      final senderResponse = await _supabase
+          .from('profiles')
+          .select('username, display_name')
+          .eq('id', senderId)
+          .single();
+
+      final senderName = senderResponse['display_name'] ??
+          senderResponse['username'] ??
+          'Someone';
+
+      // Get the receiver's notification settings
+      final receiverResponse = await _supabase
+          .from('profiles')
+          .select('notification_settings')
+          .eq('id', receiverId)
+          .single();
+
+      final notificationSettings = NotificationSettings.fromJson(
+          receiverResponse['notification_settings'] is String
+              ? jsonDecode(receiverResponse['notification_settings'])
+              : receiverResponse['notification_settings']);
+
+      // Check if push notifications are enabled
+      if (!notificationSettings.pushNotifications) {
+        return;
+      }
+
+      // Create notification content
+      final notificationTitle = 'Message from $senderName';
+      final notificationBody = messageContent.length > 50
+          ? '${messageContent.substring(0, 47)}...'
+          : messageContent;
+
+      // Show notification
+      const AndroidNotificationDetails androidPlatformChannelSpecifics =
+          AndroidNotificationDetails(
+        'direct_messages_channel',
+        'Direct Messages',
+        channelDescription: 'Notifications for direct messages',
+        importance: Importance.high,
+        priority: Priority.high,
+        showWhen: true,
+      );
+
+      const DarwinNotificationDetails iOSPlatformChannelSpecifics =
+          DarwinNotificationDetails(
+        presentAlert: true,
+        presentBadge: true,
+        presentSound: true,
+      );
+
+      const NotificationDetails platformChannelSpecifics = NotificationDetails(
+        android: androidPlatformChannelSpecifics,
+        iOS: iOSPlatformChannelSpecifics,
+      );
+
+      await _flutterLocalNotificationsPlugin.show(
+        'direct_message_${senderId}_$receiverId'.hashCode,
+        notificationTitle,
+        notificationBody,
+        platformChannelSpecifics,
+        payload: 'direct_message:$senderId',
+      );
+    } catch (e) {
+      debugPrint('Error sending direct message notification: $e');
     }
   }
 }

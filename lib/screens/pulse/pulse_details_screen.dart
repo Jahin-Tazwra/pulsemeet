@@ -5,9 +5,19 @@ import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:pulsemeet/models/pulse.dart';
+import 'package:pulsemeet/models/profile.dart';
+import 'package:pulsemeet/models/waiting_list_entry.dart';
 import 'package:pulsemeet/services/supabase_service.dart';
+import 'package:pulsemeet/services/pulse_participant_service.dart';
+import 'package:pulsemeet/services/waiting_list_service.dart';
+import 'package:pulsemeet/services/profile_service.dart';
+import 'package:pulsemeet/services/rating_service.dart';
 import 'package:pulsemeet/screens/pulse/pulse_chat_screen.dart';
+import 'package:pulsemeet/screens/profile/user_profile_screen.dart';
 import 'package:pulsemeet/utils/map_utils.dart';
+import 'package:pulsemeet/widgets/capacity_indicator.dart';
+import 'package:pulsemeet/widgets/waiting_list_info.dart';
+import 'package:pulsemeet/widgets/rating/rating_dialog.dart';
 
 /// Screen for viewing pulse details
 class PulseDetailsScreen extends StatefulWidget {
@@ -25,6 +35,14 @@ class _PulseDetailsScreenState extends State<PulseDetailsScreen> {
   bool _hasJoined = false;
   bool _mapReady = false;
   bool _isMapInitialized = false;
+  bool _isOnWaitingList = false;
+  int _waitingListPosition = 0;
+
+  // Services
+  late final PulseParticipantService _participantService;
+  late final WaitingListService _waitingListService;
+  late final ProfileService _profileService;
+  late final RatingService _ratingService;
 
   // Flag to track if we're viewing the user's location
   bool _isViewingUserLocation = false;
@@ -47,6 +65,12 @@ class _PulseDetailsScreenState extends State<PulseDetailsScreen> {
   void initState() {
     super.initState();
 
+    // Initialize services
+    _participantService = PulseParticipantService();
+    _waitingListService = WaitingListService();
+    _profileService = ProfileService();
+    _ratingService = RatingService();
+
     // Debug log the pulse location
     debugPrint(
         'PulseDetailsScreen - Pulse location: ${widget.pulse.location.latitude}, ${widget.pulse.location.longitude}');
@@ -61,6 +85,13 @@ class _PulseDetailsScreenState extends State<PulseDetailsScreen> {
 
     // Check if the user has already joined this pulse
     _checkJoinStatus();
+
+    // Subscribe to pulse status and waiting list
+    _participantService.subscribeToPulseStatus(widget.pulse.id);
+    _waitingListService.subscribeToWaitingList(widget.pulse.id);
+
+    // Check if user is on waiting list
+    _checkWaitingListStatus();
   }
 
   void _validatePulseLocation() {
@@ -192,20 +223,41 @@ class _PulseDetailsScreenState extends State<PulseDetailsScreen> {
         return;
       }
 
-      // Check if the user has joined this pulse
-      // We'll use the existing methods in SupabaseService
-      // Get joined pulses and check if this pulse is in the list
-      final joinedPulses = await supabaseService.getJoinedPulses();
-      final hasJoined =
-          joinedPulses.any((pulse) => pulse.id == widget.pulse.id);
+      // Check if the user has joined this pulse using the participant service
+      final isParticipant =
+          await _participantService.isUserParticipant(widget.pulse.id);
 
       if (mounted) {
         setState(() {
-          _hasJoined = hasJoined;
+          _hasJoined = isParticipant;
         });
       }
     } catch (e) {
       debugPrint('Error checking join status: $e');
+    }
+  }
+
+  /// Check if the user is on the waiting list
+  Future<void> _checkWaitingListStatus() async {
+    try {
+      // Check if user is on waiting list
+      final isOnWaitingList =
+          await _waitingListService.isUserOnWaitingList(widget.pulse.id);
+
+      // Get user's position if on waiting list
+      int position = 0;
+      if (isOnWaitingList) {
+        position = await _waitingListService.getUserPosition(widget.pulse.id);
+      }
+
+      if (mounted) {
+        setState(() {
+          _isOnWaitingList = isOnWaitingList;
+          _waitingListPosition = position;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error checking waiting list status: $e');
     }
   }
 
@@ -443,20 +495,39 @@ class _PulseDetailsScreenState extends State<PulseDetailsScreen> {
     });
 
     try {
-      final supabaseService = Provider.of<SupabaseService>(
-        context,
-        listen: false,
-      );
-      await supabaseService.joinPulse(widget.pulse.id);
+      // Use the participant service to join the pulse
+      final result = await _participantService.joinPulse(widget.pulse.id);
 
-      setState(() {
-        _hasJoined = true;
-      });
+      if (result['success']) {
+        // Check if added to waiting list
+        if (result['waitingList']) {
+          // Update waiting list status
+          await _checkWaitingListStatus();
 
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Successfully joined pulse')),
-        );
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text(result['message'])),
+            );
+          }
+        } else {
+          // Successfully joined as participant
+          setState(() {
+            _hasJoined = true;
+          });
+
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Successfully joined pulse')),
+            );
+          }
+        }
+      } else {
+        // Error joining
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(result['message'])),
+          );
+        }
       }
     } catch (e) {
       if (mounted) {
@@ -479,25 +550,143 @@ class _PulseDetailsScreenState extends State<PulseDetailsScreen> {
     });
 
     try {
-      final supabaseService = Provider.of<SupabaseService>(
-        context,
-        listen: false,
-      );
-      await supabaseService.leavePulse(widget.pulse.id);
+      // Use the participant service to leave the pulse
+      final success = await _participantService.leavePulse(widget.pulse.id);
 
-      setState(() {
-        _hasJoined = false;
-      });
+      if (success) {
+        // Update states
+        setState(() {
+          _hasJoined = false;
+          _isOnWaitingList = false;
+          _waitingListPosition = 0;
+        });
 
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Successfully left pulse')),
-        );
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Successfully left pulse')),
+          );
+        }
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Error leaving pulse')),
+          );
+        }
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Error leaving pulse: ${e.toString()}')),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLeaving = false;
+        });
+      }
+    }
+  }
+
+  /// Show rating dialog for the pulse creator
+  Future<void> _showRatingDialog() async {
+    try {
+      // Get the creator's profile
+      final creatorProfile =
+          await _profileService.getProfile(widget.pulse.creatorId);
+
+      if (creatorProfile == null) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Could not find creator profile')),
+          );
+        }
+        return;
+      }
+
+      // Check if the user can rate the creator
+      final canRate = await _ratingService.canRateUser(
+          widget.pulse.creatorId, widget.pulse.id);
+
+      if (!canRate) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+                content: Text('You cannot rate this user for this pulse')),
+          );
+        }
+        return;
+      }
+
+      // Show the rating dialog
+      if (mounted) {
+        final result = await showRatingDialog(
+          context,
+          userToRate: creatorProfile,
+          pulseId: widget.pulse.id,
+        );
+
+        if (result == true && mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Rating submitted successfully')),
+          );
+        }
+      }
+    } catch (e) {
+      debugPrint('Error showing rating dialog: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error showing rating dialog: $e')),
+        );
+      }
+    }
+  }
+
+  /// Navigate to the creator's profile
+  void _navigateToCreatorProfile() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => UserProfileScreen(userId: widget.pulse.creatorId),
+      ),
+    );
+  }
+
+  /// Leave waiting list
+  Future<void> _leaveWaitingList() async {
+    setState(() {
+      _isLeaving = true;
+    });
+
+    try {
+      // Leave waiting list
+      final success =
+          await _waitingListService.leaveWaitingList(widget.pulse.id);
+
+      if (success) {
+        // Update states
+        setState(() {
+          _isOnWaitingList = false;
+          _waitingListPosition = 0;
+        });
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Successfully left waiting list')),
+          );
+        }
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Error leaving waiting list')),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+              content: Text('Error leaving waiting list: ${e.toString()}')),
         );
       }
     } finally {
@@ -796,19 +985,8 @@ class _PulseDetailsScreenState extends State<PulseDetailsScreen> {
                     ],
                   ),
                   const SizedBox(height: 8),
-                  // Participants
-                  Row(
-                    children: [
-                      const Icon(Icons.people, size: 16, color: Colors.grey),
-                      const SizedBox(width: 4),
-                      Text(
-                        widget.pulse.maxParticipants != null
-                            ? '${widget.pulse.participantCount}/${widget.pulse.maxParticipants} participants'
-                            : '${widget.pulse.participantCount} participants',
-                        style: const TextStyle(color: Colors.grey),
-                      ),
-                    ],
-                  ),
+                  // Capacity indicator
+                  CapacityIndicator(pulse: widget.pulse),
                   const SizedBox(height: 16),
                   // Description
                   const Text(
@@ -818,50 +996,167 @@ class _PulseDetailsScreenState extends State<PulseDetailsScreen> {
                   const SizedBox(height: 8),
                   Text(widget.pulse.description),
                   const SizedBox(height: 24),
-                  // Join/Leave button
-                  SizedBox(
-                    width: double.infinity,
-                    child: _hasJoined
-                        ? ElevatedButton.icon(
-                            onPressed: _isLeaving ? null : _leavePulse,
-                            icon: _isLeaving
-                                ? const SizedBox(
-                                    width: 20,
-                                    height: 20,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                      color: Colors.white,
-                                    ),
-                                  )
-                                : const Icon(Icons.exit_to_app),
-                            label: const Text('Leave Pulse'),
-                            style: ElevatedButton.styleFrom(
-                              padding: const EdgeInsets.symmetric(vertical: 16),
-                              backgroundColor: Colors.red,
-                              foregroundColor: Colors.white,
+                  // Waiting list info (only shown if user is on waiting list)
+                  StreamBuilder<int>(
+                    stream: _waitingListService.userPositionStream,
+                    builder: (context, snapshot) {
+                      final position = snapshot.data ?? 0;
+
+                      if (position <= 0) {
+                        return const SizedBox.shrink();
+                      }
+
+                      return Container(
+                        margin: const EdgeInsets.only(bottom: 16),
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Theme.of(context)
+                              .colorScheme
+                              .primary
+                              .withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Icon(
+                                  Icons.info_outline,
+                                  color: Theme.of(context).colorScheme.primary,
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        'You are on the waiting list',
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .titleSmall
+                                            ?.copyWith(
+                                              color: Theme.of(context)
+                                                  .colorScheme
+                                                  .primary,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        position == 1
+                                            ? 'You are next in line! You will be automatically added when a spot opens up.'
+                                            : 'Your position: #$position. You will be automatically added when a spot opens up.',
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .bodySmall,
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
                             ),
-                          )
-                        : ElevatedButton.icon(
-                            onPressed: _isJoining ? null : _joinPulse,
-                            icon: _isJoining
-                                ? const SizedBox(
-                                    width: 20,
-                                    height: 20,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                      color: Colors.white,
-                                    ),
-                                  )
-                                : const Icon(Icons.group_add),
-                            label: const Text('Join Pulse'),
-                            style: ElevatedButton.styleFrom(
-                              padding: const EdgeInsets.symmetric(vertical: 16),
-                              backgroundColor: Theme.of(
-                                context,
-                              ).colorScheme.primary,
-                              foregroundColor: Colors.white,
+                            const SizedBox(height: 12),
+                            SizedBox(
+                              width: double.infinity,
+                              child: ElevatedButton.icon(
+                                onPressed:
+                                    _isLeaving ? null : _leaveWaitingList,
+                                icon: _isLeaving
+                                    ? const SizedBox(
+                                        width: 20,
+                                        height: 20,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                          color: Colors.white,
+                                        ),
+                                      )
+                                    : const Icon(Icons.exit_to_app),
+                                label: const Text('Leave Waiting List'),
+                                style: ElevatedButton.styleFrom(
+                                  padding:
+                                      const EdgeInsets.symmetric(vertical: 12),
+                                  backgroundColor: Colors.red,
+                                  foregroundColor: Colors.white,
+                                ),
+                              ),
                             ),
-                          ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+
+                  // Join/Leave button (only shown if user is not on waiting list)
+                  StreamBuilder<int>(
+                    stream: _waitingListService.userPositionStream,
+                    builder: (context, snapshot) {
+                      final position = snapshot.data ?? 0;
+
+                      // If user is on waiting list, don't show join/leave button
+                      if (position > 0) {
+                        return const SizedBox.shrink();
+                      }
+
+                      return SizedBox(
+                        width: double.infinity,
+                        child: _hasJoined
+                            ? ElevatedButton.icon(
+                                onPressed: _isLeaving ? null : _leavePulse,
+                                icon: _isLeaving
+                                    ? const SizedBox(
+                                        width: 20,
+                                        height: 20,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                          color: Colors.white,
+                                        ),
+                                      )
+                                    : const Icon(Icons.exit_to_app),
+                                label: const Text('Leave Pulse'),
+                                style: ElevatedButton.styleFrom(
+                                  padding:
+                                      const EdgeInsets.symmetric(vertical: 16),
+                                  backgroundColor: Colors.red,
+                                  foregroundColor: Colors.white,
+                                ),
+                              )
+                            : StreamBuilder<PulseStatus>(
+                                stream: _participantService.pulseStatusStream,
+                                builder: (context, snapshot) {
+                                  final status =
+                                      snapshot.data ?? PulseStatus.open;
+
+                                  return ElevatedButton.icon(
+                                    onPressed: _isJoining ? null : _joinPulse,
+                                    icon: _isJoining
+                                        ? const SizedBox(
+                                            width: 20,
+                                            height: 20,
+                                            child: CircularProgressIndicator(
+                                              strokeWidth: 2,
+                                              color: Colors.white,
+                                            ),
+                                          )
+                                        : status == PulseStatus.full
+                                            ? const Icon(Icons.people_alt)
+                                            : const Icon(Icons.group_add),
+                                    label: Text(status == PulseStatus.full
+                                        ? 'Join Waiting List'
+                                        : 'Join Pulse'),
+                                    style: ElevatedButton.styleFrom(
+                                      padding: const EdgeInsets.symmetric(
+                                          vertical: 16),
+                                      backgroundColor:
+                                          Theme.of(context).colorScheme.primary,
+                                      foregroundColor: Colors.white,
+                                    ),
+                                  );
+                                },
+                              ),
+                      );
+                    },
                   ),
                   const SizedBox(height: 16),
                   // Get Directions button
@@ -902,6 +1197,49 @@ class _PulseDetailsScreenState extends State<PulseDetailsScreen> {
                         ),
                       ),
                     ),
+
+                  // Rate creator button (only if joined and pulse has ended)
+                  if (_hasJoined &&
+                      DateTime.now().isAfter(widget.pulse.endTime))
+                    Padding(
+                      padding: const EdgeInsets.only(top: 16.0),
+                      child: SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton.icon(
+                          onPressed: _showRatingDialog,
+                          icon: const Icon(Icons.star_outline),
+                          label: const Text('Rate Host'),
+                          style: OutlinedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                          ),
+                        ),
+                      ),
+                    ),
+
+                  // View creator profile button
+                  Padding(
+                    padding: const EdgeInsets.only(top: 16.0),
+                    child: InkWell(
+                      onTap: _navigateToCreatorProfile,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(vertical: 8.0),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            const Icon(Icons.person, size: 16),
+                            const SizedBox(width: 4),
+                            Text(
+                              'View Host Profile',
+                              style: TextStyle(
+                                color: Theme.of(context).colorScheme.primary,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
                 ],
               ),
             ),

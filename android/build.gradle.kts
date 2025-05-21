@@ -1,3 +1,5 @@
+// Java 11 is already configured in app/build.gradle.kts
+
 allprojects {
     repositories {
         google()

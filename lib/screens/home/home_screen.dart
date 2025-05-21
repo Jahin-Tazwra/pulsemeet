@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:pulsemeet/screens/home/nearby_pulses_tab.dart';
 import 'package:pulsemeet/screens/home/my_pulses_tab.dart';
+import 'package:pulsemeet/screens/home/chat_tab.dart';
 import 'package:pulsemeet/screens/home/profile_tab.dart';
 import 'package:pulsemeet/screens/pulse/location_selection_screen.dart';
 
@@ -19,6 +20,7 @@ class _HomeScreenState extends State<HomeScreen> {
   late final List<Widget> _tabs = [
     const NearbyPulsesTab(),
     const MyPulsesTab(),
+    const ChatTab(),
     const ProfileTab(),
   ];
 
@@ -26,27 +28,55 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       body: _tabs[_selectedIndex],
-      bottomNavigationBar: BottomNavigationBar(
-        currentIndex: _selectedIndex,
-        onTap: (index) {
-          setState(() {
-            _selectedIndex = index;
-          });
-        },
-        items: const [
-          BottomNavigationBarItem(
-            icon: Icon(Icons.explore),
-            label: 'Nearby',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.people),
-            label: 'My Pulses',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.person),
-            label: 'Profile',
-          ),
-        ],
+      bottomNavigationBar: Container(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withAlpha(15),
+              blurRadius: 8,
+              offset: const Offset(0, -2),
+            ),
+          ],
+        ),
+        child: BottomNavigationBar(
+          currentIndex: _selectedIndex,
+          onTap: (index) {
+            setState(() {
+              _selectedIndex = index;
+            });
+          },
+          // Use theme settings
+          type: BottomNavigationBarType.fixed,
+          backgroundColor: Colors.white,
+          selectedItemColor: const Color(0xFF1E88E5), // Blue for selected items
+          unselectedItemColor:
+              const Color(0xFF9E9E9E), // Grey for unselected items
+          selectedLabelStyle: const TextStyle(fontWeight: FontWeight.bold),
+          unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.normal),
+          selectedIconTheme: const IconThemeData(size: 28),
+          unselectedIconTheme: const IconThemeData(size: 24),
+          elevation:
+              0, // No elevation since we're using a container with shadow
+          items: const [
+            BottomNavigationBarItem(
+              icon: Icon(Icons.explore),
+              label: 'Nearby',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.people),
+              label: 'My Pulses',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.chat_bubble_outline),
+              label: 'Chat',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.person),
+              label: 'Profile',
+            ),
+          ],
+        ),
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: () {
@@ -57,7 +87,11 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           );
         },
-        child: const Icon(Icons.add),
+        backgroundColor: const Color(0xFF1E88E5), // Blue background
+        foregroundColor: Colors.white, // White icon
+        shape: const CircleBorder(),
+        elevation: 4,
+        child: const Icon(Icons.add, size: 32),
       ),
     );
   }

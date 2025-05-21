@@ -66,24 +66,31 @@ class SupabaseService {
   Future<void> signInWithGoogle() async {
     try {
       debugPrint('Starting Google sign-in process');
+
+      // Check if there's an existing session first
+      final currentSession = _client.auth.currentSession;
+      if (currentSession != null) {
+        debugPrint('User already has a valid session');
+        return;
+      }
+
       if (kIsWeb) {
         // web uses the hosted flow redirect
         await _client.auth.signInWithOAuth(
-          Provider.google, // Using the Provider enum from Supabase
+          Provider.google,
         );
       } else {
-        // mobile uses your Android intent‐filter deep link
-        final response = await _client.auth.signInWithOAuth(
-          Provider.google, // Using the Provider enum from Supabase
+        // mobile uses your Android/iOS intent‐filter deep link
+        await _client.auth.signInWithOAuth(
+          Provider.google,
           redirectTo: 'com.example.pulsemeet://login-callback',
         );
-        debugPrint('Google sign-in response: $response');
+        debugPrint('Google sign-in initiated');
       }
-      debugPrint('Google sign-in process completed');
 
-      // Force refresh the auth state
-      final session = await _client.auth.refreshSession();
-      debugPrint('Session after refresh: ${session.session}');
+      // Note: The actual sign-in happens asynchronously through the redirect flow
+      // The app will be redirected to Google and then back to the app via the deep link
+      // The auth state listener in the app will handle the sign-in completion
     } catch (e) {
       debugPrint('Error during Google sign-in: $e');
       rethrow;
@@ -110,6 +117,12 @@ class SupabaseService {
     String? avatarUrl,
     String? phoneNumber,
     String? bio,
+    String? email,
+    NotificationSettings? notificationSettings,
+    PrivacySettings? privacySettings,
+    ThemeMode? themeMode,
+    String? location,
+    List<String>? interests,
   }) async {
     final now = DateTime.now();
 
@@ -121,6 +134,14 @@ class SupabaseService {
       if (avatarUrl != null) 'avatar_url': avatarUrl,
       if (phoneNumber != null) 'phone_number': phoneNumber,
       if (bio != null) 'bio': bio,
+      if (email != null) 'email': email,
+      if (notificationSettings != null)
+        'notification_settings': jsonEncode(notificationSettings.toJson()),
+      if (privacySettings != null)
+        'privacy_settings': jsonEncode(privacySettings.toJson()),
+      if (themeMode != null) 'theme_mode': _themeModeTString(themeMode),
+      if (location != null) 'location': location,
+      if (interests != null) 'interests': jsonEncode(interests),
       'updated_at': now.toIso8601String(),
       // For new profiles, set created_at and last_seen_at
       'created_at': now.toIso8601String(),
@@ -152,6 +173,18 @@ class SupabaseService {
       final response =
           await _client.from('profiles').upsert(minimalData).select().single();
       return Profile.fromJson(response);
+    }
+  }
+
+  /// Convert theme mode to string
+  String _themeModeTString(ThemeMode mode) {
+    switch (mode) {
+      case ThemeMode.dark:
+        return 'dark';
+      case ThemeMode.light:
+        return 'light';
+      case ThemeMode.system:
+        return 'system';
     }
   }
 
@@ -195,22 +228,130 @@ class SupabaseService {
     }
   }
 
-  /// Upload avatar image
+  /// Upload avatar image with error handling
   Future<String> uploadAvatar(String userId, File imageFile) async {
-    final fileExt = imageFile.path.split('.').last;
-    final fileName = '$userId/avatar.$fileExt';
-    final filePath = await _client.storage.from('avatars').upload(
-          fileName,
-          imageFile,
-          fileOptions: const FileOptions(upsert: true),
-        );
+    try {
+      // Validate file size (max 5MB)
+      final fileSize = await imageFile.length();
+      if (fileSize > 5 * 1024 * 1024) {
+        throw Exception('Image file is too large. Maximum size is 5MB.');
+      }
 
-    final imageUrl = _client.storage.from('avatars').getPublicUrl(filePath);
+      // Validate file extension
+      final fileExt = imageFile.path.split('.').last.toLowerCase();
+      final validExtensions = ['jpg', 'jpeg', 'png', 'gif', 'webp'];
+      if (!validExtensions.contains(fileExt)) {
+        throw Exception(
+            'Invalid file format. Supported formats: ${validExtensions.join(', ')}');
+      }
 
-    // Update profile with new avatar URL
-    await upsertProfile(id: userId, avatarUrl: imageUrl);
+      // Create a unique filename with timestamp to avoid caching issues
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      final fileName = '$userId/avatar_$timestamp.$fileExt';
 
-    return imageUrl;
+      // Upload the file
+      final filePath = await _client.storage.from('avatars').upload(
+            fileName,
+            imageFile,
+            fileOptions: const FileOptions(upsert: true),
+          );
+
+      // Get the public URL
+      final imageUrl = _client.storage.from('avatars').getPublicUrl(filePath);
+
+      // Update profile with new avatar URL
+      await upsertProfile(id: userId, avatarUrl: imageUrl);
+
+      return imageUrl;
+    } catch (e) {
+      debugPrint('Error uploading avatar: $e');
+
+      // Check for specific error types
+      if (e.toString().contains('permission')) {
+        throw Exception(
+            'Permission denied when uploading avatar. Please try again later.');
+      } else if (e.toString().contains('network')) {
+        throw Exception(
+            'Network error when uploading avatar. Please check your connection and try again.');
+      } else if (e.toString().contains('storage')) {
+        throw Exception(
+            'Storage error when uploading avatar. Please try again later.');
+      }
+
+      // Rethrow with a more user-friendly message
+      throw Exception('Failed to upload avatar: ${e.toString()}');
+    }
+  }
+
+  /// Update notification settings
+  Future<Profile> updateNotificationSettings(
+      String userId, NotificationSettings settings) async {
+    try {
+      // Ensure the profile exists
+      await getProfile(userId);
+
+      // Update with new settings
+      return await upsertProfile(
+        id: userId,
+        notificationSettings: settings,
+      );
+    } catch (e) {
+      debugPrint('Error updating notification settings: $e');
+      throw Exception(
+          'Failed to update notification settings: ${e.toString()}');
+    }
+  }
+
+  /// Update privacy settings
+  Future<Profile> updatePrivacySettings(
+      String userId, PrivacySettings settings) async {
+    try {
+      // Ensure the profile exists
+      await getProfile(userId);
+
+      // Update with new settings
+      return await upsertProfile(
+        id: userId,
+        privacySettings: settings,
+      );
+    } catch (e) {
+      debugPrint('Error updating privacy settings: $e');
+      throw Exception('Failed to update privacy settings: ${e.toString()}');
+    }
+  }
+
+  /// Update theme mode
+  Future<Profile> updateThemeMode(String userId, ThemeMode themeMode) async {
+    try {
+      // Ensure the profile exists
+      await getProfile(userId);
+
+      // Update with new theme mode
+      return await upsertProfile(
+        id: userId,
+        themeMode: themeMode,
+      );
+    } catch (e) {
+      debugPrint('Error updating theme mode: $e');
+      throw Exception('Failed to update theme mode: ${e.toString()}');
+    }
+  }
+
+  /// Update user interests
+  Future<Profile> updateInterests(String userId, List<String> interests) async {
+    try {
+      // Ensure the profile exists
+      await getProfile(userId);
+
+      // Update with new interests
+      return await upsertProfile(
+        id: userId,
+        interests: interests,
+      );
+    } catch (e) {
+      debugPrint('Error updating interests: $e');
+      throw Exception('Failed to update interests: ${e.toString()}');
+    }
   }
 
   /// Create a new pulse (meetup)
@@ -223,7 +364,7 @@ class SupabaseService {
     required int radius,
     required DateTime startTime,
     required DateTime endTime,
-    int? maxParticipants,
+    required int maxParticipants, // Now required
   }) async {
     final userId = currentUserId;
     if (userId == null) {
@@ -305,7 +446,7 @@ class SupabaseService {
           '$userId', '$title', '$description', ${activityEmoji != null ? "'$activityEmoji'" : 'NULL'},
           ST_SetSRID(ST_MakePoint($longitude, $latitude), 4326)::geography, $radius,
           '${startTime.toIso8601String()}', '${endTime.toIso8601String()}',
-          ${maxParticipants ?? 'NULL'}, true,
+          $maxParticipants, true,
           NOW(), NOW()
         ) RETURNING id
         ''';
@@ -551,12 +692,44 @@ class SupabaseService {
   }
 
   /// Join a pulse
-  Future<void> joinPulse(String pulseId) async {
+  Future<Map<String, dynamic>> joinPulse(String pulseId) async {
     final userId = currentUserId;
     if (userId == null) {
       throw Exception('User not authenticated');
     }
 
+    // Get the pulse to check its status
+    final pulse = await getPulseById(pulseId);
+    if (pulse == null) {
+      throw Exception('Pulse not found');
+    }
+
+    // Check if the pulse is full
+    if (pulse.isFull) {
+      // Add to waiting list
+      final nextPosition = await _client.rpc(
+        'get_next_waiting_list_position',
+        params: {
+          'pulse_id_param': pulseId,
+        },
+      );
+
+      await _client.from('pulse_waiting_list').insert({
+        'pulse_id': pulseId,
+        'user_id': userId,
+        'position': nextPosition,
+        'status': 'Waiting',
+        'joined_at': DateTime.now().toIso8601String(),
+      });
+
+      return {
+        'success': true,
+        'message': 'Added to waiting list',
+        'waitingList': true,
+      };
+    }
+
+    // Add as participant
     await _client.from('pulse_participants').upsert({
       'pulse_id': pulseId,
       'user_id': userId,
@@ -564,20 +737,102 @@ class SupabaseService {
       'joined_at': DateTime.now().toIso8601String(),
       'left_at': null,
     });
+
+    return {
+      'success': true,
+      'message': 'Joined successfully',
+      'waitingList': false,
+    };
   }
 
   /// Leave a pulse
-  Future<void> leavePulse(String pulseId) async {
+  Future<bool> leavePulse(String pulseId) async {
     final userId = currentUserId;
     if (userId == null) {
       throw Exception('User not authenticated');
     }
 
+    // Check if user is on waiting list
+    final waitingListResponse = await _client
+        .from('pulse_waiting_list')
+        .select('id')
+        .eq('pulse_id', pulseId)
+        .eq('user_id', userId)
+        .eq('status', 'Waiting');
+
+    if (waitingListResponse.isNotEmpty) {
+      // Leave waiting list
+      await _client
+          .from('pulse_waiting_list')
+          .delete()
+          .eq('pulse_id', pulseId)
+          .eq('user_id', userId);
+      return true;
+    }
+
+    // Leave as participant
     await _client
         .from('pulse_participants')
         .update({'status': 'left', 'left_at': DateTime.now().toIso8601String()})
         .eq('pulse_id', pulseId)
         .eq('user_id', userId);
+
+    return true;
+  }
+
+  /// Get waiting list for a pulse
+  Future<List<Map<String, dynamic>>> getWaitingList(String pulseId) async {
+    final response = await _client
+        .from('pulse_waiting_list')
+        .select('*, profiles:user_id(id, username, display_name, avatar_url)')
+        .eq('pulse_id', pulseId)
+        .eq('status', 'Waiting')
+        .order('position', ascending: true);
+
+    return List<Map<String, dynamic>>.from(response);
+  }
+
+  /// Get waiting list count for a pulse
+  Future<int> getWaitingListCount(String pulseId) async {
+    final response = await _client
+        .from('pulse_waiting_list')
+        .select('id')
+        .eq('pulse_id', pulseId)
+        .eq('status', 'Waiting');
+
+    return response.length;
+  }
+
+  /// Check if user is on waiting list
+  Future<bool> isUserOnWaitingList(String pulseId) async {
+    final userId = currentUserId;
+    if (userId == null) return false;
+
+    final response = await _client
+        .from('pulse_waiting_list')
+        .select('id')
+        .eq('pulse_id', pulseId)
+        .eq('user_id', userId)
+        .eq('status', 'Waiting');
+
+    return response.isNotEmpty;
+  }
+
+  /// Get user's position on waiting list
+  Future<int> getUserWaitingListPosition(String pulseId) async {
+    final userId = currentUserId;
+    if (userId == null) return 0;
+
+    final response = await _client
+        .from('pulse_waiting_list')
+        .select('position')
+        .eq('pulse_id', pulseId)
+        .eq('user_id', userId)
+        .eq('status', 'Waiting')
+        .single();
+
+    if (response == null) return 0;
+    return response['position'] as int? ?? 0;
   }
 
   /// Send a chat message
@@ -669,19 +924,14 @@ class SupabaseService {
         .eq('blocked_id', blockedUserId);
   }
 
-  /// Get pulses created by the current user
-  Future<List<Pulse>> getCreatedPulses() async {
-    final userId = currentUserId;
-    if (userId == null) {
-      throw Exception('User not authenticated');
-    }
-
+  /// Get pulses created by a specific user
+  Future<List<Pulse>> getPulsesByCreator(String creatorId) async {
     try {
       // We need to use a raw query to extract coordinates
       final response = await _client.rpc(
         'get_pulses_with_coordinates',
         params: {
-          'creator_id_param': userId,
+          'creator_id_param': creatorId,
         },
       );
 
@@ -723,8 +973,126 @@ class SupabaseService {
 
       return pulses;
     } catch (e) {
+      debugPrint('Error fetching pulses by creator: $e');
+      return [];
+    }
+  }
+
+  /// Get pulses created by the current user
+  Future<List<Pulse>> getCreatedPulses() async {
+    final userId = currentUserId;
+    if (userId == null) {
+      throw Exception('User not authenticated');
+    }
+
+    try {
+      return await getPulsesByCreator(userId);
+    } catch (e) {
       debugPrint('Error fetching created pulses: $e');
       rethrow;
+    }
+  }
+
+  /// Get pulses joined by the current user
+  Future<List<Pulse>> getJoinedPulses() async {
+    final userId = currentUserId;
+    if (userId == null) {
+      throw Exception('User not authenticated');
+    }
+
+    try {
+      // Get pulse IDs that the user has joined
+      final participantResponse = await _client
+          .from('pulse_participants')
+          .select('pulse_id')
+          .eq('user_id', userId)
+          .eq('status', 'active');
+
+      if (participantResponse.isEmpty) {
+        return [];
+      }
+
+      // Extract pulse IDs
+      final pulseIds = participantResponse
+          .map<String>((item) => item['pulse_id'] as String)
+          .toList();
+
+      // Get pulse details with extracted coordinates
+      final pulsesResponse = await _client.rpc(
+        'get_joined_pulses_with_coordinates',
+        params: {
+          'pulse_ids': pulseIds,
+        },
+      );
+
+      // Process the response
+      List<Map<String, dynamic>> pulseDataList = [];
+
+      if (pulsesResponse is List) {
+        for (var item in pulsesResponse) {
+          if (item is Map<String, dynamic>) {
+            pulseDataList.add(item);
+          } else if (item is String) {
+            try {
+              final Map<String, dynamic> jsonData = jsonDecode(item);
+              pulseDataList.add(jsonData);
+            } catch (e) {
+              debugPrint('Error parsing JSON string: $e');
+            }
+          }
+        }
+      }
+
+      // Convert to Pulse objects
+      final pulses = pulseDataList
+          .map((item) {
+            try {
+              return Pulse.fromJson(item);
+            } catch (e) {
+              debugPrint('Error parsing pulse: $e');
+              return null;
+            }
+          })
+          .where((pulse) => pulse != null)
+          .cast<Pulse>()
+          .toList();
+
+      return pulses;
+    } catch (e) {
+      debugPrint('Error fetching joined pulses: $e');
+      return [];
+    }
+  }
+
+  /// Get pulses where the current user has participated (either as creator or participant)
+  Future<List<Pulse>> getParticipatedPulses() async {
+    final userId = currentUserId;
+    if (userId == null) {
+      throw Exception('User not authenticated');
+    }
+
+    try {
+      // Get pulses created by the user
+      final createdPulses = await getCreatedPulses();
+
+      // Get pulses joined by the user
+      final joinedPulses = await getJoinedPulses();
+
+      // Combine and remove duplicates
+      final Map<String, Pulse> pulsesMap = {};
+
+      for (final pulse in createdPulses) {
+        pulsesMap[pulse.id] = pulse;
+      }
+
+      for (final pulse in joinedPulses) {
+        pulsesMap[pulse.id] = pulse;
+      }
+
+      return pulsesMap.values.toList();
+    } catch (e) {
+      debugPrint('Error fetching participated pulses: $e');
+      return [];
     }
   }
 
@@ -776,81 +1144,6 @@ class SupabaseService {
     } catch (e) {
       debugPrint('Error fetching pulse by ID: $e');
       return null;
-    }
-  }
-
-  /// Get pulses joined by the current user
-  Future<List<Pulse>> getJoinedPulses() async {
-    final userId = currentUserId;
-    if (userId == null) {
-      throw Exception('User not authenticated');
-    }
-
-    try {
-      // Get pulse IDs that the user has joined
-      final participantResponse = await _client
-          .from('pulse_participants')
-          .select('pulse_id')
-          .eq('user_id', userId)
-          .eq('status', 'active');
-
-      if (participantResponse is! List || participantResponse.isEmpty) {
-        return [];
-      }
-
-      // Extract pulse IDs
-      final pulseIds = participantResponse
-          .map((item) => item['pulse_id'] as String)
-          .toList();
-
-      // Get pulse details with extracted coordinates
-      final pulsesResponse = await _client.rpc(
-        'get_joined_pulses_with_coordinates',
-        params: {
-          'pulse_ids': pulseIds,
-        },
-      );
-
-      // Process the response which could be in different formats
-      List<Map<String, dynamic>> pulseDataList = [];
-
-      if (pulsesResponse is List) {
-        for (var item in pulsesResponse) {
-          if (item is Map<String, dynamic>) {
-            pulseDataList.add(item);
-          } else if (item is String) {
-            // Try to parse as JSON if it's a string
-            try {
-              final Map<String, dynamic> jsonData = jsonDecode(item);
-              pulseDataList.add(jsonData);
-            } catch (e) {
-              debugPrint('Error parsing JSON string: $e');
-            }
-          }
-        }
-      }
-
-      debugPrint('Processed ${pulseDataList.length} joined pulse data items');
-
-      // Convert each item to a Pulse
-      final pulses = pulseDataList
-          .map((item) {
-            try {
-              return Pulse.fromJson(item);
-            } catch (e) {
-              debugPrint('Error parsing pulse: $e');
-              debugPrint('Problematic data: $item');
-              return null;
-            }
-          })
-          .where((pulse) => pulse != null)
-          .cast<Pulse>()
-          .toList();
-
-      return pulses;
-    } catch (e) {
-      debugPrint('Error fetching joined pulses: $e');
-      rethrow;
     }
   }
 }

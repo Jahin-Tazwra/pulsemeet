@@ -1,6 +1,12 @@
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:flutter/foundation.dart' show debugPrint;
 
+/// Status of a pulse
+enum PulseStatus {
+  open,
+  full,
+}
+
 /// Model class for a Pulse (meetup)
 class Pulse {
   final String id;
@@ -16,6 +22,8 @@ class Pulse {
   final int? maxParticipants;
   final int participantCount;
   final bool isActive;
+  final PulseStatus status;
+  final int waitingListCount;
   double? distanceMeters;
   final DateTime createdAt;
   final DateTime updatedAt;
@@ -34,6 +42,8 @@ class Pulse {
     this.maxParticipants,
     this.participantCount = 0,
     this.isActive = true,
+    this.status = PulseStatus.open,
+    this.waitingListCount = 0,
     this.distanceMeters,
     required this.createdAt,
     required this.updatedAt,
@@ -116,6 +126,17 @@ class Pulse {
     }
 
     try {
+      // Parse pulse status
+      PulseStatus parseStatus(String? statusStr) {
+        switch (statusStr?.toLowerCase()) {
+          case 'full':
+            return PulseStatus.full;
+          case 'open':
+          default:
+            return PulseStatus.open;
+        }
+      }
+
       return Pulse(
         id: json['id']?.toString() ?? 'unknown',
         creatorId: json['creator_id']?.toString() ?? 'unknown',
@@ -135,6 +156,9 @@ class Pulse {
         participantCount:
             parseNumber<int>(json['participant_count'], defaultValue: 0),
         isActive: json['is_active'] == true,
+        status: parseStatus(json['status']?.toString()),
+        waitingListCount:
+            parseNumber<int>(json['waiting_list_count'], defaultValue: 0),
         distanceMeters: json['distance_meters'] != null
             ? parseNumber<double>(json['distance_meters'])
             : null,
@@ -161,6 +185,15 @@ class Pulse {
 
   /// Convert Pulse to JSON
   Map<String, dynamic> toJson() {
+    String statusToString(PulseStatus status) {
+      switch (status) {
+        case PulseStatus.full:
+          return 'Full';
+        case PulseStatus.open:
+          return 'Open';
+      }
+    }
+
     return {
       'id': id,
       'creator_id': creatorId,
@@ -173,6 +206,9 @@ class Pulse {
       'end_time': endTime.toIso8601String(),
       'max_participants': maxParticipants,
       'is_active': isActive,
+      'status': statusToString(status),
+      'participant_count': participantCount,
+      'waiting_list_count': waitingListCount,
       'created_at': createdAt.toIso8601String(),
       'updated_at': updatedAt.toIso8601String(),
     };
@@ -190,6 +226,8 @@ class Pulse {
     int? maxParticipants,
     int? participantCount,
     bool? isActive,
+    PulseStatus? status,
+    int? waitingListCount,
   }) {
     return Pulse(
       id: id,
@@ -205,6 +243,8 @@ class Pulse {
       maxParticipants: maxParticipants ?? this.maxParticipants,
       participantCount: participantCount ?? this.participantCount,
       isActive: isActive ?? this.isActive,
+      status: status ?? this.status,
+      waitingListCount: waitingListCount ?? this.waitingListCount,
       distanceMeters: distanceMeters,
       createdAt: createdAt,
       updatedAt: DateTime.now(),
@@ -231,5 +271,26 @@ class Pulse {
     } else {
       return '${(distanceMeters! / 1000).toStringAsFixed(1)} km';
     }
+  }
+
+  /// Check if the pulse is full
+  bool get isFull => status == PulseStatus.full;
+
+  /// Check if the pulse has a waiting list
+  bool get hasWaitingList => waitingListCount > 0;
+
+  /// Get the formatted participant count string
+  String get formattedParticipantCount {
+    if (maxParticipants == null) {
+      return '$participantCount participants';
+    } else {
+      return '$participantCount/$maxParticipants participants';
+    }
+  }
+
+  /// Get the capacity percentage (0-100)
+  int get capacityPercentage {
+    if (maxParticipants == null || maxParticipants == 0) return 0;
+    return (participantCount / maxParticipants! * 100).round().clamp(0, 100);
   }
 }

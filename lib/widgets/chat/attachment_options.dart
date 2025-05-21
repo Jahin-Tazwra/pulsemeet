@@ -37,28 +37,28 @@ class AttachmentOptions extends StatelessWidget {
                 context,
                 Icons.camera_alt,
                 'Camera',
-                Colors.purple,
+                const Color(0xFF424242), // Dark grey
                 onImageFromCamera,
               ),
               _buildOptionButton(
                 context,
                 Icons.photo,
                 'Gallery',
-                Colors.pink,
+                const Color(0xFF616161), // Medium-dark grey
                 onImageFromGallery,
               ),
               _buildOptionButton(
                 context,
                 Icons.videocam,
                 'Video',
-                Colors.red,
+                const Color(0xFF757575), // Medium grey
                 onVideoFromCamera,
               ),
               _buildOptionButton(
                 context,
                 Icons.video_library,
                 'Video Gallery',
-                Colors.orange,
+                const Color(0xFF9E9E9E), // Medium-light grey
                 onVideoFromGallery,
               ),
             ],
@@ -71,14 +71,14 @@ class AttachmentOptions extends StatelessWidget {
                 context,
                 Icons.location_on,
                 'Location',
-                Colors.green,
+                const Color(0xFFBDBDBD), // Light grey
                 onLocation,
               ),
               _buildOptionButton(
                 context,
                 Icons.location_searching,
                 'Live Location',
-                Colors.blue,
+                const Color(0xFFE0E0E0), // Very light grey
                 onLiveLocation,
               ),
               // Placeholder buttons to maintain alignment
@@ -90,7 +90,7 @@ class AttachmentOptions extends StatelessWidget {
       ),
     );
   }
-  
+
   /// Build an option button
   Widget _buildOptionButton(
     BuildContext context,

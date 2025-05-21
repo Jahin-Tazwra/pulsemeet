@@ -237,18 +237,35 @@ class _NearbyPulsesTabState extends State<NearbyPulsesTab> {
       key: _scaffoldMessengerKey,
       child: Scaffold(
         appBar: AppBar(
-          title: const Text('PulseMeet'),
+          title: const Text(
+            'PulseMeet',
+            style: TextStyle(
+              fontWeight: FontWeight.bold,
+              fontSize: 24,
+            ),
+          ),
           centerTitle: true,
-          leading: CircleAvatar(
-            backgroundColor: Colors.blue.shade100,
-            child: const Icon(Icons.person),
+          leading: Padding(
+            padding: const EdgeInsets.all(8.0),
+            child: CircleAvatar(
+              backgroundColor:
+                  Colors.white.withAlpha(75), // Semi-transparent white
+              child: const Icon(
+                Icons.person,
+                color: Colors.white, // White icon
+              ),
+            ),
           ),
           actions: [
             IconButton(
-              icon: const Icon(Icons.notifications_outlined),
+              icon: const Icon(
+                Icons.search,
+                color: Colors.white, // White icon
+              ),
               onPressed: () {
-                // TODO: Navigate to notifications screen
+                Navigator.pushNamed(context, '/user_search');
               },
+              tooltip: 'Search for users',
             ),
           ],
         ),
@@ -260,7 +277,7 @@ class _NearbyPulsesTabState extends State<NearbyPulsesTab> {
                   const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
               child: Container(
                 decoration: BoxDecoration(
-                  color: Colors.blue.shade100,
+                  color: const Color(0xFF64B5F6), // Light blue background
                   borderRadius: BorderRadius.circular(30),
                 ),
                 child: Row(
@@ -276,15 +293,28 @@ class _NearbyPulsesTabState extends State<NearbyPulsesTab> {
                         child: Container(
                           padding: const EdgeInsets.symmetric(vertical: 12),
                           decoration: BoxDecoration(
-                            color:
-                                _showMapView ? Colors.blue : Colors.transparent,
+                            color: _showMapView
+                                ? Colors.white
+                                : Colors.transparent,
                             borderRadius: BorderRadius.circular(30),
+                            boxShadow: _showMapView
+                                ? [
+                                    BoxShadow(
+                                      color: Colors.black.withAlpha(25),
+                                      blurRadius: 4,
+                                      offset: const Offset(0, 2),
+                                    ),
+                                  ]
+                                : null,
                           ),
                           child: Text(
                             'Map',
                             textAlign: TextAlign.center,
                             style: TextStyle(
-                              color: _showMapView ? Colors.white : Colors.black,
+                              color: _showMapView
+                                  ? const Color(
+                                      0xFF1E88E5) // Blue text when selected
+                                  : Colors.white, // White text when unselected
                               fontWeight: FontWeight.bold,
                             ),
                           ),
@@ -302,16 +332,27 @@ class _NearbyPulsesTabState extends State<NearbyPulsesTab> {
                           padding: const EdgeInsets.symmetric(vertical: 12),
                           decoration: BoxDecoration(
                             color: !_showMapView
-                                ? Colors.blue
+                                ? Colors.white
                                 : Colors.transparent,
                             borderRadius: BorderRadius.circular(30),
+                            boxShadow: !_showMapView
+                                ? [
+                                    BoxShadow(
+                                      color: Colors.black.withAlpha(25),
+                                      blurRadius: 4,
+                                      offset: const Offset(0, 2),
+                                    ),
+                                  ]
+                                : null,
                           ),
                           child: Text(
                             'List',
                             textAlign: TextAlign.center,
                             style: TextStyle(
-                              color:
-                                  !_showMapView ? Colors.white : Colors.black,
+                              color: !_showMapView
+                                  ? const Color(
+                                      0xFF1E88E5) // Blue text when selected
+                                  : Colors.white, // White text when unselected
                               fontWeight: FontWeight.bold,
                             ),
                           ),
@@ -374,7 +415,7 @@ class _NearbyPulsesTabState extends State<NearbyPulsesTab> {
             // Only show the loading indicator if we don't have a location yet
             if (currentLatLng == null)
               const Center(
-                child: CircularProgressIndicator(),
+                child: CircularProgressIndicator(color: Color(0xFF1E88E5)),
               ),
           ],
         );
@@ -441,17 +482,18 @@ class _NearbyPulsesTabState extends State<NearbyPulsesTab> {
           // Show loading indicator when searching for closest pulse
           if (_isSearchingForClosestPulse)
             Container(
-              color: Colors.black.withAlpha(100), // Semi-transparent overlay
+              color:
+                  Colors.white.withAlpha(230), // Semi-transparent white overlay
               child: const Center(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    CircularProgressIndicator(color: Colors.white),
+                    CircularProgressIndicator(color: Color(0xFF1E88E5)),
                     SizedBox(height: 16),
                     Text(
                       'Finding closest pulse...',
                       style: TextStyle(
-                        color: Colors.white,
+                        color: Color(0xFF1E88E5),
                         fontSize: 16,
                         fontWeight: FontWeight.bold,
                       ),
@@ -466,7 +508,7 @@ class _NearbyPulsesTabState extends State<NearbyPulsesTab> {
       // List view - show appropriate states for loading, error, or empty list
       if (_isLoading) {
         return const Center(
-          child: CircularProgressIndicator(),
+          child: CircularProgressIndicator(color: Color(0xFF1E88E5)),
         );
       }
 
@@ -498,7 +540,7 @@ class _NearbyPulsesTabState extends State<NearbyPulsesTab> {
               const Icon(
                 Icons.location_off,
                 size: 64,
-                color: Colors.grey,
+                color: Color(0xFF64B5F6), // Light blue
               ),
               const SizedBox(height: 16),
               const Text(
@@ -511,7 +553,7 @@ class _NearbyPulsesTabState extends State<NearbyPulsesTab> {
               const SizedBox(height: 8),
               const Text(
                 'Try creating a new pulse!',
-                style: TextStyle(color: Colors.grey),
+                style: TextStyle(color: Color(0xFF64B5F6)),
               ),
               const SizedBox(height: 16),
               ElevatedButton(

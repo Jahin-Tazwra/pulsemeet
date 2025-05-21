@@ -33,7 +33,8 @@ class PulseMarker {
   }
 
   /// Draw the marker on the canvas
-  static void _drawMarker(Canvas canvas, double size, Pulse pulse, Paint paint) {
+  static void _drawMarker(
+      Canvas canvas, double size, Pulse pulse, Paint paint) {
     final center = Offset(size / 2, size / 2);
     final radius = size / 2 - 8;
 
@@ -93,22 +94,34 @@ class PulseMarker {
     }
   }
 
-  /// Get color based on pulse type or distance
+  /// Get color based on pulse capacity and distance
   static Color _getColorForPulse(Pulse pulse) {
-    // You can customize this based on pulse properties
-    if (pulse.distanceMeters == null) {
-      return Colors.blue;
+    // If pulse is full, show dark blue
+    if (pulse.isFull) {
+      return const Color(0xFF0D47A1); // Dark blue
     }
-    
-    // Color based on distance
+
+    // If pulse has high capacity (>80%), show medium blue
+    if (pulse.maxParticipants != null) {
+      final capacityPercentage = pulse.capacityPercentage;
+      if (capacityPercentage > 80) {
+        return const Color(0xFF1565C0); // Medium-dark blue
+      }
+    }
+
+    // Otherwise, color based on distance with blue shades
+    if (pulse.distanceMeters == null) {
+      return const Color(0xFF64B5F6); // Light blue
+    }
+
     if (pulse.distanceMeters! < 200) {
-      return Colors.green;
+      return const Color(0xFF42A5F5); // Medium-light blue
     } else if (pulse.distanceMeters! < 500) {
-      return Colors.orange;
+      return const Color(0xFF1E88E5); // Medium blue
     } else if (pulse.distanceMeters! < 1000) {
-      return Colors.deepPurple;
+      return const Color(0xFF1976D2); // Medium-dark blue
     } else {
-      return Colors.red;
+      return const Color(0xFF1565C0); // Dark blue
     }
   }
 
@@ -119,11 +132,11 @@ class PulseMarker {
     Function(Pulse) onTap,
   ) async {
     final markers = <Marker>{};
-    
+
     for (final pulse in pulses) {
       try {
         final markerIcon = await createMarkerIcon(context, pulse);
-        
+
         markers.add(
           Marker(
             markerId: MarkerId('pulse_${pulse.id}'),
@@ -144,7 +157,7 @@ class PulseMarker {
         );
       }
     }
-    
+
     return markers;
   }
 }

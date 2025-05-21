@@ -10,7 +10,8 @@ import 'package:pulsemeet/widgets/pulse_marker.dart';
 class NearbyPulsesMapView extends StatefulWidget {
   final List<Pulse> pulses;
   final LatLng? currentLocation;
-  final VoidCallback onRefresh;
+  final VoidCallback?
+      onRefresh; // Made optional since we removed the refresh button
   final int searchRadius;
 
   final Function(bool isLoading)? onFindClosestPulse;
@@ -19,7 +20,7 @@ class NearbyPulsesMapView extends StatefulWidget {
     super.key,
     required this.pulses,
     this.currentLocation,
-    required this.onRefresh,
+    this.onRefresh, // No longer required
     this.searchRadius = 5000,
     this.onFindClosestPulse,
   });
@@ -35,7 +36,7 @@ class _NearbyPulsesMapViewState extends State<NearbyPulsesMapView> {
   bool _initialCameraPositionSet = false;
 
   // List to track visited pulses in the current session
-  List<String> _visitedPulseIds = [];
+  final List<String> _visitedPulseIds = [];
 
   // List of pulses sorted by distance from user
   List<Pulse> _pulsesByDistance = [];
@@ -117,7 +118,8 @@ class _NearbyPulsesMapViewState extends State<NearbyPulsesMapView> {
         Marker(
           markerId: const MarkerId('current_location'),
           position: widget.currentLocation!,
-          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueBlue),
+          icon:
+              BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
           infoWindow: const InfoWindow(title: 'Your Location'),
         ),
       );
@@ -128,8 +130,9 @@ class _NearbyPulsesMapViewState extends State<NearbyPulsesMapView> {
           circleId: const CircleId('search_radius'),
           center: widget.currentLocation!,
           radius: widget.searchRadius.toDouble(),
-          fillColor: Colors.blue.withAlpha(25), // Light blue with low opacity
-          strokeColor: Colors.blue,
+          fillColor: const Color(0xFF1E88E5)
+              .withAlpha(25), // Light blue with low opacity
+          strokeColor: const Color(0xFF1E88E5),
           strokeWidth: 1,
         ),
       );
@@ -152,9 +155,9 @@ class _NearbyPulsesMapViewState extends State<NearbyPulsesMapView> {
             circleId: CircleId('pulse_radius_${pulse.id}'),
             center: pulse.location,
             radius: pulse.radius.toDouble(),
-            fillColor:
-                Colors.orange.withAlpha(25), // Light orange with low opacity
-            strokeColor: Colors.orange,
+            fillColor: const Color(0xFF64B5F6)
+                .withAlpha(25), // Light blue with low opacity
+            strokeColor: const Color(0xFF64B5F6),
             strokeWidth: 1,
           ),
         );
@@ -187,9 +190,9 @@ class _NearbyPulsesMapViewState extends State<NearbyPulsesMapView> {
             circleId: CircleId('pulse_radius_${pulse.id}'),
             center: pulse.location,
             radius: pulse.radius.toDouble(),
-            fillColor:
-                Colors.orange.withAlpha(25), // Light orange with low opacity
-            strokeColor: Colors.orange,
+            fillColor: const Color(0xFF64B5F6)
+                .withAlpha(25), // Light blue with low opacity
+            strokeColor: const Color(0xFF64B5F6),
             strokeWidth: 1,
           ),
         );
@@ -391,9 +394,9 @@ class _NearbyPulsesMapViewState extends State<NearbyPulsesMapView> {
         circleId: const CircleId('search_radius'),
         center: widget.currentLocation!,
         radius: widget.searchRadius.toDouble(),
-        fillColor:
-            Colors.blue.withAlpha(20), // Very light blue with low opacity
-        strokeColor: Colors.blue,
+        fillColor: const Color(0xFF1E88E5)
+            .withAlpha(20), // Very light blue with low opacity
+        strokeColor: const Color(0xFF1E88E5), // Blue
         strokeWidth: 1,
       );
 
@@ -422,43 +425,26 @@ class _NearbyPulsesMapViewState extends State<NearbyPulsesMapView> {
         // Loading indicator when waiting for location
         if (widget.currentLocation == null && !_initialCameraPositionSet)
           Container(
-            color: Colors.black.withAlpha(50), // Semi-transparent overlay
+            color:
+                Colors.white.withAlpha(230), // Semi-transparent white overlay
             child: const Center(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  CircularProgressIndicator(color: Colors.white),
+                  CircularProgressIndicator(color: Color(0xFF1E88E5)),
                   SizedBox(height: 16),
                   Text(
                     'Getting your location...',
                     style: TextStyle(
-                      color: Colors.white,
+                      color: Color(0xFF1E88E5),
                       fontSize: 16,
                       fontWeight: FontWeight.bold,
-                      shadows: [
-                        Shadow(
-                          offset: Offset(1, 1),
-                          blurRadius: 3,
-                          color: Colors.black,
-                        ),
-                      ],
                     ),
                   ),
                 ],
               ),
             ),
           ),
-
-        // Refresh button (top right)
-        Positioned(
-          top: 16,
-          right: 16,
-          child: FloatingActionButton.small(
-            heroTag: 'refresh_map',
-            onPressed: widget.onRefresh,
-            child: const Icon(Icons.refresh),
-          ),
-        ),
 
         // Find Closest Pulse button (bottom center)
         Positioned(
@@ -471,8 +457,8 @@ class _NearbyPulsesMapViewState extends State<NearbyPulsesMapView> {
               child: ElevatedButton.icon(
                 onPressed: widget.pulses.isEmpty ? null : findClosestPulse,
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.blue,
-                  foregroundColor: Colors.white,
+                  backgroundColor: const Color(0xFF1E88E5), // Blue background
+                  foregroundColor: Colors.white, // White text
                   padding:
                       const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
                   shape: RoundedRectangleBorder(

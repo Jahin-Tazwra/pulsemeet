@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:pulsemeet/models/pulse.dart';
+import 'package:pulsemeet/widgets/capacity_indicator.dart';
 
 /// Card widget for displaying a pulse
 class PulseCard extends StatelessWidget {
@@ -21,7 +22,7 @@ class PulseCard extends StatelessWidget {
     final startDate = dateFormat.format(pulse.startTime);
     final startTime = timeFormat.format(pulse.startTime);
     final endTime = timeFormat.format(pulse.endTime);
-    
+
     // Format distance
     String distanceText = '';
     if (pulse.distanceMeters != null) {
@@ -32,7 +33,7 @@ class PulseCard extends StatelessWidget {
         distanceText = '${km.toStringAsFixed(1)} km away';
       }
     }
-    
+
     return Card(
       elevation: 2,
       shape: RoundedRectangleBorder(
@@ -72,14 +73,16 @@ class PulseCard extends StatelessWidget {
                         vertical: 4,
                       ),
                       decoration: BoxDecoration(
-                        color: Colors.grey.shade200,
+                        color: Theme.of(context)
+                            .colorScheme
+                            .surfaceContainerHighest,
                         borderRadius: BorderRadius.circular(12),
                       ),
                       child: Text(
                         distanceText,
                         style: TextStyle(
                           fontSize: 12,
-                          color: Colors.grey.shade700,
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
                         ),
                       ),
                     ),
@@ -92,7 +95,7 @@ class PulseCard extends StatelessWidget {
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
-                  color: Colors.grey.shade700,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
                 ),
               ),
               const SizedBox(height: 16),
@@ -103,43 +106,30 @@ class PulseCard extends StatelessWidget {
                   Expanded(
                     child: Row(
                       children: [
-                        const Icon(
+                        Icon(
                           Icons.access_time,
                           size: 16,
-                          color: Colors.grey,
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
                         ),
                         const SizedBox(width: 4),
                         Flexible(
                           child: Text(
                             '$startDate, $startTime - $endTime',
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontSize: 12,
-                              color: Colors.grey,
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .onSurfaceVariant,
                             ),
                           ),
                         ),
                       ],
                     ),
                   ),
-                  // Participants
-                  Row(
-                    children: [
-                      const Icon(
-                        Icons.people,
-                        size: 16,
-                        color: Colors.grey,
-                      ),
-                      const SizedBox(width: 4),
-                      Text(
-                        pulse.maxParticipants != null
-                            ? '${pulse.participantCount}/${pulse.maxParticipants}'
-                            : '${pulse.participantCount}',
-                        style: const TextStyle(
-                          fontSize: 12,
-                          color: Colors.grey,
-                        ),
-                      ),
-                    ],
+                  // Capacity indicator
+                  CapacityIndicator(
+                    pulse: pulse,
+                    showDetails: false,
                   ),
                 ],
               ),

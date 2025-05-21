@@ -93,17 +93,17 @@ class _MyPulsesTabState extends State<MyPulsesTab>
         title: const Text('My Pulses'),
         bottom: TabBar(
           controller: _tabController,
+          labelColor: Colors.white,
+          unselectedLabelColor: Colors.white.withAlpha(180),
+          indicatorColor: Colors.white,
+          indicatorWeight: 3,
           tabs: const [
             Tab(text: 'Created'),
             Tab(text: 'Joined'),
           ],
         ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: _fetchMyPulses,
-          ),
-        ],
+        // Removed refresh button to create a cleaner interface
+        // Real-time updates will be used instead
       ),
       body: _buildBody(),
     );
@@ -112,7 +112,7 @@ class _MyPulsesTabState extends State<MyPulsesTab>
   Widget _buildBody() {
     if (_isLoading) {
       return const Center(
-        child: CircularProgressIndicator(),
+        child: CircularProgressIndicator(color: Color(0xFF1E88E5)),
       );
     }
 
@@ -154,7 +154,7 @@ class _MyPulsesTabState extends State<MyPulsesTab>
             Icon(
               type == 'created' ? Icons.add_circle_outline : Icons.group_add,
               size: 64,
-              color: Colors.grey,
+              color: const Color(0xFF64B5F6), // Light blue
             ),
             const SizedBox(height: 16),
             Text(
@@ -169,7 +169,7 @@ class _MyPulsesTabState extends State<MyPulsesTab>
               type == 'created'
                   ? 'Create a new pulse to get started!'
                   : 'Join pulses to see them here!',
-              style: const TextStyle(color: Colors.grey),
+              style: const TextStyle(color: Color(0xFF64B5F6)),
             ),
           ],
         ),

@@ -184,9 +184,13 @@ class _PulseCreationScreenState extends State<PulseCreationScreen> {
         listen: false,
       );
 
-      int? maxParticipants;
+      // Validate max participants
+      int maxParticipants = 10; // Default value
       if (_maxParticipantsController.text.isNotEmpty) {
-        maxParticipants = int.tryParse(_maxParticipantsController.text);
+        final parsedValue = int.tryParse(_maxParticipantsController.text);
+        if (parsedValue != null && parsedValue > 0) {
+          maxParticipants = parsedValue;
+        }
       }
 
       // Determine the title and emoji based on selected activity
@@ -220,7 +224,7 @@ class _PulseCreationScreenState extends State<PulseCreationScreen> {
       if (mounted) {
         // Pop twice to go back to the home screen
         Navigator.popUntil(context, (route) => route.isFirst);
-        
+
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Pulse created successfully')),
         );
@@ -267,12 +271,13 @@ class _PulseCreationScreenState extends State<PulseCreationScreen> {
                       ),
                     ),
                     const SizedBox(height: 16),
-                    
+
                     // Activity grid
                     GridView.builder(
                       shrinkWrap: true,
                       physics: const NeverScrollableScrollPhysics(),
-                      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                      gridDelegate:
+                          const SliverGridDelegateWithFixedCrossAxisCount(
                         crossAxisCount: 4,
                         childAspectRatio: 1,
                         crossAxisSpacing: 10,
@@ -282,7 +287,7 @@ class _PulseCreationScreenState extends State<PulseCreationScreen> {
                       itemBuilder: (context, index) {
                         final activity = _activities[index];
                         final isSelected = _selectedActivity == activity;
-                        
+
                         return GestureDetector(
                           onTap: () {
                             setState(() {
@@ -292,10 +297,14 @@ class _PulseCreationScreenState extends State<PulseCreationScreen> {
                           },
                           child: Container(
                             decoration: BoxDecoration(
-                              color: isSelected ? Colors.blue.shade100 : Colors.grey.shade100,
+                              color: isSelected
+                                  ? Colors.blue.shade100
+                                  : Colors.grey.shade100,
                               borderRadius: BorderRadius.circular(8),
                               border: Border.all(
-                                color: isSelected ? Colors.blue : Colors.grey.shade300,
+                                color: isSelected
+                                    ? Colors.blue
+                                    : Colors.grey.shade300,
                                 width: 2,
                               ),
                             ),
@@ -312,7 +321,9 @@ class _PulseCreationScreenState extends State<PulseCreationScreen> {
                                   textAlign: TextAlign.center,
                                   style: TextStyle(
                                     fontSize: 12,
-                                    fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                                    fontWeight: isSelected
+                                        ? FontWeight.bold
+                                        : FontWeight.normal,
                                   ),
                                 ),
                               ],
@@ -321,7 +332,7 @@ class _PulseCreationScreenState extends State<PulseCreationScreen> {
                         );
                       },
                     ),
-                    
+
                     // Custom activity input
                     if (_isCustomActivity) ...[
                       const SizedBox(height: 16),
@@ -332,16 +343,17 @@ class _PulseCreationScreenState extends State<PulseCreationScreen> {
                           border: OutlineInputBorder(),
                         ),
                         validator: (value) {
-                          if (_isCustomActivity && (value == null || value.isEmpty)) {
+                          if (_isCustomActivity &&
+                              (value == null || value.isEmpty)) {
                             return 'Please enter a custom activity name';
                           }
                           return null;
                         },
                       ),
                     ],
-                    
+
                     const SizedBox(height: 24),
-                    
+
                     // Pulse details
                     const Text(
                       'Pulse Details',
@@ -351,7 +363,7 @@ class _PulseCreationScreenState extends State<PulseCreationScreen> {
                       ),
                     ),
                     const SizedBox(height: 16),
-                    
+
                     // Description
                     TextFormField(
                       controller: _descriptionController,
@@ -370,7 +382,7 @@ class _PulseCreationScreenState extends State<PulseCreationScreen> {
                       },
                     ),
                     const SizedBox(height: 16),
-                    
+
                     // Date selection
                     InkWell(
                       onTap: _selectDate,
@@ -384,7 +396,7 @@ class _PulseCreationScreenState extends State<PulseCreationScreen> {
                       ),
                     ),
                     const SizedBox(height: 16),
-                    
+
                     // Time selection
                     Row(
                       children: [
@@ -418,19 +430,29 @@ class _PulseCreationScreenState extends State<PulseCreationScreen> {
                       ],
                     ),
                     const SizedBox(height: 16),
-                    
+
                     // Max participants
                     TextFormField(
                       controller: _maxParticipantsController,
                       decoration: const InputDecoration(
-                        labelText: 'Max Participants (Optional)',
+                        labelText: 'Max Participants',
                         border: OutlineInputBorder(),
-                        hintText: 'Leave empty for unlimited',
+                        hintText: 'Enter maximum number of participants',
                       ),
                       keyboardType: TextInputType.number,
+                      validator: (value) {
+                        if (value == null || value.isEmpty) {
+                          return 'Please enter maximum number of participants';
+                        }
+                        final number = int.tryParse(value);
+                        if (number == null || number <= 0) {
+                          return 'Please enter a valid positive number';
+                        }
+                        return null;
+                      },
                     ),
                     const SizedBox(height: 16),
-                    
+
                     // Radius slider
                     Row(
                       children: [
@@ -454,7 +476,7 @@ class _PulseCreationScreenState extends State<PulseCreationScreen> {
                       },
                     ),
                     const SizedBox(height: 24),
-                    
+
                     // Create button
                     SizedBox(
                       width: double.infinity,
@@ -462,12 +484,14 @@ class _PulseCreationScreenState extends State<PulseCreationScreen> {
                         onPressed: _createPulse,
                         style: ElevatedButton.styleFrom(
                           padding: const EdgeInsets.symmetric(vertical: 16),
-                          backgroundColor: Theme.of(context).colorScheme.primary,
+                          backgroundColor:
+                              Theme.of(context).colorScheme.primary,
                           foregroundColor: Colors.white,
                         ),
                         child: const Text(
                           'Create Pulse',
-                          style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                          style: TextStyle(
+                              fontSize: 16, fontWeight: FontWeight.bold),
                         ),
                       ),
                     ),

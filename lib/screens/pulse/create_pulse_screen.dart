@@ -175,9 +175,13 @@ class _CreatePulseScreenState extends State<CreatePulseScreen> {
         listen: false,
       );
 
-      int? maxParticipants;
+      // Validate max participants
+      int maxParticipants = 10; // Default value
       if (_maxParticipantsController.text.isNotEmpty) {
-        maxParticipants = int.tryParse(_maxParticipantsController.text);
+        final parsedValue = int.tryParse(_maxParticipantsController.text);
+        if (parsedValue != null && parsedValue > 0) {
+          maxParticipants = parsedValue;
+        }
       }
 
       // Create the pulse
