@@ -38,6 +38,7 @@ class _NearbyPulsesMapViewState extends State<NearbyPulsesMapView> {
   Set<Marker> _markers = {};
   Set<Circle> _circles = {};
   bool _initialCameraPositionSet = false;
+  ThemeProvider? _themeProvider; // Store provider reference safely
 
   // List to track visited pulses in the current session
   final List<String> _visitedPulseIds = [];
@@ -49,6 +50,13 @@ class _NearbyPulsesMapViewState extends State<NearbyPulsesMapView> {
   void initState() {
     super.initState();
     _updateMapElements();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Store the provider reference safely during widget lifecycle
+    _themeProvider = Provider.of<ThemeProvider>(context, listen: false);
   }
 
   @override
@@ -242,9 +250,8 @@ class _NearbyPulsesMapViewState extends State<NearbyPulsesMapView> {
   @override
   void dispose() {
     // Unregister the controller when the widget is disposed
-    if (_mapController != null) {
-      final themeProvider = Provider.of<ThemeProvider>(context, listen: false);
-      themeProvider.mapThemeController.unregisterController(_mapController!);
+    if (_mapController != null && _themeProvider != null) {
+      _themeProvider!.mapThemeController.unregisterController(_mapController!);
     }
     super.dispose();
   }

@@ -6,6 +6,41 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 class DatabaseInitializationService {
   final SupabaseClient _supabase = Supabase.instance.client;
 
+  /// Execute SQL that doesn't return results
+  /// This is a helper method to handle SQL execution properly
+  Future<void> _executeSql(String sql) async {
+    try {
+      await _supabase.rpc('execute_sql', params: {'query': sql});
+    } catch (e) {
+      // Handle specific error for queries that don't return tuples
+      if (e is PostgrestException) {
+        if (e.code == '42601' && e.message.contains('does not return tuples')) {
+          // This is expected for CREATE TABLE, ALTER TABLE, etc.
+          // These commands execute successfully but don't return data
+          debugPrint('SQL executed successfully (no results expected)');
+          return;
+        } else if (e.code == 'PGRST202' &&
+            e.message.contains('Could not find the function')) {
+          // This could happen if the function name is wrong or not available
+          debugPrint('SQL function not found: ${e.message}');
+          rethrow;
+        } else if (e.code == '42P07' && e.message.contains('already exists')) {
+          // Table or object already exists - this is fine
+          debugPrint('SQL object already exists: ${e.message}');
+          return;
+        } else if (e.code == '23505' && e.message.contains('duplicate key')) {
+          // Duplicate key - this is fine for inserts with "IF NOT EXISTS"
+          debugPrint('SQL duplicate key (ignored): ${e.message}');
+          return;
+        }
+      }
+
+      // Re-throw other errors
+      debugPrint('SQL error: $e');
+      rethrow;
+    }
+  }
+
   /// Initialize the database schema
   /// This should be called during app startup
   Future<void> initialize() async {
@@ -16,6 +51,7 @@ class DatabaseInitializationService {
       await _ensureTypingStatusTable();
       await _ensureConnectionsTables();
       await _ensureRatingsTable(); // Add ratings table initialization
+      await _ensurePulseSharingTable(); // Add pulse sharing features
 
       // Check and configure storage buckets
       await _ensureStorageBuckets();
@@ -42,8 +78,7 @@ class DatabaseInitializationService {
       }
 
       // Create the table and related objects
-      await _supabase.rpc('exec_sql', params: {
-        'query': '''
+      await _executeSql('''
         -- Create pulse_typing_status table if it doesn't exist
         CREATE TABLE IF NOT EXISTS pulse_typing_status (
           id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -61,12 +96,10 @@ class DatabaseInitializationService {
         CREATE INDEX IF NOT EXISTS idx_typing_status_pulse_id ON pulse_typing_status(pulse_id);
         CREATE INDEX IF NOT EXISTS idx_typing_status_user_id ON pulse_typing_status(user_id);
         CREATE INDEX IF NOT EXISTS idx_typing_status_is_typing ON pulse_typing_status(is_typing);
-        '''
-      });
+      ''');
 
       // Create function to update timestamp
-      await _supabase.rpc('exec_sql', params: {
-        'query': '''
+      await _executeSql('''
         -- Create function to automatically update last_updated timestamp
         CREATE OR REPLACE FUNCTION update_typing_status_timestamp()
         RETURNS TRIGGER AS \$\$
@@ -81,12 +114,10 @@ class DatabaseInitializationService {
         CREATE TRIGGER update_typing_status_timestamp
         BEFORE UPDATE ON pulse_typing_status
         FOR EACH ROW EXECUTE FUNCTION update_typing_status_timestamp();
-        '''
-      });
+      ''');
 
       // Create cleanup function
-      await _supabase.rpc('exec_sql', params: {
-        'query': '''
+      await _executeSql('''
         -- Create function to automatically clean up old typing statuses
         CREATE OR REPLACE FUNCTION cleanup_typing_status()
         RETURNS TRIGGER AS \$\$
@@ -105,12 +136,10 @@ class DatabaseInitializationService {
         CREATE TRIGGER cleanup_typing_status_trigger
         AFTER INSERT OR UPDATE ON pulse_typing_status
         FOR EACH STATEMENT EXECUTE FUNCTION cleanup_typing_status();
-        '''
-      });
+      ''');
 
       // Add RLS policies
-      await _supabase.rpc('exec_sql', params: {
-        'query': '''
+      await _executeSql('''
         -- Add RLS policies
         ALTER TABLE pulse_typing_status ENABLE ROW LEVEL SECURITY;
 
@@ -153,8 +182,7 @@ class DatabaseInitializationService {
         ON pulse_typing_status FOR DELETE
         TO authenticated
         USING (user_id = auth.uid());
-        '''
-      });
+      ''');
 
       debugPrint(
           'Successfully created pulse_typing_status table and related objects');
@@ -176,8 +204,7 @@ class DatabaseInitializationService {
         debugPrint('Creating pulse_media bucket...');
 
         // Create the bucket
-        await _supabase.rpc('exec_sql', params: {
-          'query': '''
+        await _executeSql('''
           -- Create the pulse_media bucket if it doesn't exist
           INSERT INTO storage.buckets (id, name, public, avif_autodetection, file_size_limit, allowed_mime_types)
           VALUES ('pulse_media', 'pulse_media', false, false, 52428800, -- 50MB limit
@@ -200,15 +227,13 @@ class DatabaseInitializationService {
               'audio/webm',
               'audio/aac'
           ]::text[]);
-          '''
-        });
+        ''');
       } else {
         debugPrint('pulse_media bucket already exists');
       }
 
       // Configure RLS policies for the bucket
-      await _supabase.rpc('exec_sql', params: {
-        'query': '''
+      await _executeSql('''
         -- Drop existing policies for pulse_media bucket if they exist
         DROP POLICY IF EXISTS "Allow authenticated users to upload media" ON storage.objects;
         DROP POLICY IF EXISTS "Allow authenticated users to view media" ON storage.objects;
@@ -241,8 +266,7 @@ class DatabaseInitializationService {
         CREATE POLICY "Pulse media is publicly accessible" ON storage.objects
         FOR SELECT TO anon
         USING (bucket_id = 'pulse_media');
-        '''
-      });
+      ''');
 
       debugPrint('Successfully configured pulse_media bucket');
     } catch (e) {
@@ -265,8 +289,7 @@ class DatabaseInitializationService {
       }
 
       // Create the connections table
-      await _supabase.rpc('exec_sql', params: {
-        'query': '''
+      await _executeSql('''
         -- Create connections table
         CREATE TABLE IF NOT EXISTS connections (
           id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -285,12 +308,10 @@ class DatabaseInitializationService {
         CREATE INDEX IF NOT EXISTS idx_connections_requester_id ON connections(requester_id);
         CREATE INDEX IF NOT EXISTS idx_connections_receiver_id ON connections(receiver_id);
         CREATE INDEX IF NOT EXISTS idx_connections_status ON connections(status);
-        '''
-      });
+      ''');
 
       // Create the direct messages table
-      await _supabase.rpc('exec_sql', params: {
-        'query': '''
+      await _executeSql('''
         -- Create direct messages table
         CREATE TABLE IF NOT EXISTS direct_messages (
           id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -317,12 +338,10 @@ class DatabaseInitializationService {
         CREATE INDEX IF NOT EXISTS idx_direct_messages_receiver_id ON direct_messages(receiver_id);
         CREATE INDEX IF NOT EXISTS idx_direct_messages_created_at ON direct_messages(created_at);
         CREATE INDEX IF NOT EXISTS idx_direct_messages_conversation ON direct_messages(sender_id, receiver_id);
-        '''
-      });
+      ''');
 
       // Create functions and triggers
-      await _supabase.rpc('exec_sql', params: {
-        'query': '''
+      await _executeSql('''
         -- Create function to update direct message timestamp
         CREATE OR REPLACE FUNCTION update_direct_message_timestamp()
         RETURNS TRIGGER AS \$\$
@@ -352,12 +371,10 @@ class DatabaseInitializationService {
         CREATE TRIGGER update_connection_timestamp
         BEFORE UPDATE ON connections
         FOR EACH ROW EXECUTE FUNCTION update_connection_timestamp();
-        '''
-      });
+      ''');
 
       // Create typing status table for direct messages
-      await _supabase.rpc('exec_sql', params: {
-        'query': '''
+      await _executeSql('''
         -- Create direct_message_typing_status table
         CREATE TABLE IF NOT EXISTS direct_message_typing_status (
           id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -409,12 +426,10 @@ class DatabaseInitializationService {
         CREATE TRIGGER cleanup_dm_typing_status_trigger
         AFTER INSERT OR UPDATE ON direct_message_typing_status
         FOR EACH STATEMENT EXECUTE FUNCTION cleanup_dm_typing_status();
-        '''
-      });
+      ''');
 
       // Add RLS policies
-      await _supabase.rpc('exec_sql', params: {
-        'query': '''
+      await _executeSql('''
         -- Add RLS policies for connections
         ALTER TABLE connections ENABLE ROW LEVEL SECURITY;
 
@@ -502,8 +517,7 @@ class DatabaseInitializationService {
         ON direct_message_typing_status FOR UPDATE
         TO authenticated
         USING (user_id = auth.uid());
-        '''
-      });
+      ''');
 
       debugPrint('Successfully created connections tables and related objects');
     } catch (e) {
@@ -526,8 +540,7 @@ class DatabaseInitializationService {
       }
 
       // Create the table and related objects
-      await _supabase.rpc('exec_sql', params: {
-        'query': '''
+      await _executeSql('''
       -- Create ratings table if it doesn't exist
       CREATE TABLE IF NOT EXISTS ratings (
         id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -554,12 +567,10 @@ class DatabaseInitializationService {
       ALTER TABLE profiles
       ADD COLUMN IF NOT EXISTS average_rating NUMERIC(3,2) DEFAULT 0,
       ADD COLUMN IF NOT EXISTS total_ratings INTEGER DEFAULT 0;
-      '''
-      });
+      ''');
 
       // Create functions and triggers
-      await _supabase.rpc('exec_sql', params: {
-        'query': '''
+      await _executeSql('''
       -- Create function to update rating timestamp
       CREATE OR REPLACE FUNCTION update_rating_timestamp()
       RETURNS TRIGGER AS \$\$
@@ -610,12 +621,10 @@ class DatabaseInitializationService {
       AFTER INSERT OR UPDATE OR DELETE ON ratings
       FOR EACH ROW
       EXECUTE FUNCTION calculate_user_rating();
-      '''
-      });
+      ''');
 
       // Add RLS policies
-      await _supabase.rpc('exec_sql', params: {
-        'query': '''
+      await _executeSql('''
       -- Enable RLS on the table
       ALTER TABLE ratings ENABLE ROW LEVEL SECURITY;
 
@@ -660,12 +669,150 @@ class DatabaseInitializationService {
       FOR DELETE
       TO authenticated
       USING (rater_id = auth.uid());
-      '''
-      });
+      ''');
 
       debugPrint('Successfully created ratings table and related objects');
     } catch (e) {
       debugPrint('Error ensuring ratings table: $e');
+      // Continue with initialization even if this part fails
+    }
+  }
+
+  /// Ensure pulse sharing table exists
+  Future<void> _ensurePulseSharingTable() async {
+    try {
+      // Check if the pulse_shares table exists by attempting to query it
+      try {
+        await _supabase.from('pulse_shares').select('id').limit(1);
+        debugPrint('pulse_shares table already exists');
+        return;
+      } catch (e) {
+        // Table doesn't exist, create it
+        debugPrint('Creating pulse_shares table...');
+      }
+
+      // Create the table and related objects
+      await _executeSql('''
+      -- Create pulse_shares table if it doesn't exist
+      CREATE TABLE IF NOT EXISTS pulse_shares (
+        id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+        pulse_id UUID NOT NULL REFERENCES pulses(id) ON DELETE CASCADE,
+        sharer_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+        share_code VARCHAR(20) UNIQUE NOT NULL,
+        platform VARCHAR(50),
+        created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+        expires_at TIMESTAMP WITH TIME ZONE,
+        click_count INTEGER DEFAULT 0,
+        is_active BOOLEAN DEFAULT true
+      );
+
+      -- Add comment to table
+      COMMENT ON TABLE pulse_shares IS 'Tracks pulse sharing and analytics';
+
+      -- Add indexes for performance
+      CREATE INDEX IF NOT EXISTS idx_pulse_shares_pulse_id ON pulse_shares(pulse_id);
+      CREATE INDEX IF NOT EXISTS idx_pulse_shares_sharer_id ON pulse_shares(sharer_id);
+      CREATE INDEX IF NOT EXISTS idx_pulse_shares_share_code ON pulse_shares(share_code);
+      CREATE INDEX IF NOT EXISTS idx_pulse_shares_created_at ON pulse_shares(created_at);
+      CREATE INDEX IF NOT EXISTS idx_pulse_shares_is_active ON pulse_shares(is_active);
+      ''');
+
+      // Create functions and triggers
+      await _executeSql('''
+      -- Create function to update pulse share timestamp
+      CREATE OR REPLACE FUNCTION update_pulse_share_timestamp()
+      RETURNS TRIGGER AS \$\$
+      BEGIN
+        NEW.updated_at = NOW();
+        RETURN NEW;
+      END;
+      \$\$ LANGUAGE plpgsql;
+
+      -- Create function to generate unique share codes
+      CREATE OR REPLACE FUNCTION generate_share_code()
+      RETURNS TEXT AS \$\$
+      DECLARE
+        chars TEXT := 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+        result TEXT := '';
+        i INTEGER := 0;
+        code_exists BOOLEAN := true;
+      BEGIN
+        WHILE code_exists LOOP
+          result := '';
+          FOR i IN 1..8 LOOP
+            result := result || substr(chars, floor(random() * length(chars) + 1)::integer, 1);
+          END LOOP;
+
+          SELECT EXISTS(SELECT 1 FROM pulse_shares WHERE share_code = result) INTO code_exists;
+        END LOOP;
+
+        RETURN result;
+      END;
+      \$\$ LANGUAGE plpgsql;
+
+      -- Create trigger to auto-generate share codes
+      CREATE OR REPLACE FUNCTION set_share_code()
+      RETURNS TRIGGER AS \$\$
+      BEGIN
+        IF NEW.share_code IS NULL OR NEW.share_code = '' THEN
+          NEW.share_code := generate_share_code();
+        END IF;
+        RETURN NEW;
+      END;
+      \$\$ LANGUAGE plpgsql;
+
+      DROP TRIGGER IF EXISTS trigger_set_share_code ON pulse_shares;
+      CREATE TRIGGER trigger_set_share_code
+      BEFORE INSERT ON pulse_shares
+      FOR EACH ROW
+      EXECUTE FUNCTION set_share_code();
+      ''');
+
+      // Add RLS policies
+      await _executeSql('''
+      -- Enable RLS on the table
+      ALTER TABLE pulse_shares ENABLE ROW LEVEL SECURITY;
+
+      -- Policy to allow users to view their own shares
+      DROP POLICY IF EXISTS "Users can view their own pulse shares" ON pulse_shares;
+      CREATE POLICY "Users can view their own pulse shares"
+      ON pulse_shares FOR SELECT
+      TO authenticated
+      USING (sharer_id = auth.uid());
+
+      -- Policy to allow users to create pulse shares
+      DROP POLICY IF EXISTS "Users can create pulse shares" ON pulse_shares;
+      CREATE POLICY "Users can create pulse shares"
+      ON pulse_shares FOR INSERT
+      TO authenticated
+      WITH CHECK (sharer_id = auth.uid());
+
+      -- Policy to allow users to update their own shares
+      DROP POLICY IF EXISTS "Users can update their own pulse shares" ON pulse_shares;
+      CREATE POLICY "Users can update their own pulse shares"
+      ON pulse_shares FOR UPDATE
+      TO authenticated
+      USING (sharer_id = auth.uid())
+      WITH CHECK (sharer_id = auth.uid());
+
+      -- Policy to allow users to delete their own shares
+      DROP POLICY IF EXISTS "Users can delete their own pulse shares" ON pulse_shares;
+      CREATE POLICY "Users can delete their own pulse shares"
+      ON pulse_shares FOR DELETE
+      TO authenticated
+      USING (sharer_id = auth.uid());
+
+      -- Policy to allow public access to active shares for viewing
+      DROP POLICY IF EXISTS "Public can view active pulse shares" ON pulse_shares;
+      CREATE POLICY "Public can view active pulse shares"
+      ON pulse_shares FOR SELECT
+      TO anon
+      USING (is_active = true AND (expires_at IS NULL OR expires_at > NOW()));
+      ''');
+
+      debugPrint('Successfully created pulse_shares table and related objects');
+    } catch (e) {
+      debugPrint('Error ensuring pulse_shares table: $e');
       // Continue with initialization even if this part fails
     }
   }

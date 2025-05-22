@@ -2,13 +2,15 @@ import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:pulsemeet/models/chat_message.dart';
 import 'package:pulsemeet/models/formatted_text.dart';
+import 'package:pulsemeet/services/profile_service.dart';
+import 'package:pulsemeet/screens/profile/user_profile_screen.dart';
 import 'package:pulsemeet/widgets/chat/media_preview.dart';
 import 'package:pulsemeet/widgets/chat/location_preview.dart';
 import 'package:pulsemeet/widgets/chat/formatted_text_widget.dart';
 import 'package:pulsemeet/widgets/chat/audio_player.dart';
 
 /// A widget that displays the content of a chat message
-class MessageContent extends StatelessWidget {
+class MessageContent extends StatefulWidget {
   final ChatMessage message;
   final bool isFromCurrentUser;
 
@@ -19,29 +21,76 @@ class MessageContent extends StatelessWidget {
   });
 
   @override
+  State<MessageContent> createState() => _MessageContentState();
+}
+
+class _MessageContentState extends State<MessageContent> {
+  /// Handle mention tap - navigate to user profile
+  Future<void> _handleMentionTap(String username) async {
+    try {
+      final profileService = ProfileService();
+
+      // Search for the user by username
+      final profiles = await profileService.searchProfiles(username);
+
+      if (profiles.isNotEmpty) {
+        // Find exact match or first result
+        final profile = profiles.firstWhere(
+          (p) => p.username?.toLowerCase() == username.toLowerCase(),
+          orElse: () => profiles.first,
+        );
+
+        // Navigate to user profile
+        if (mounted) {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => UserProfileScreen(userId: profile.id),
+            ),
+          );
+        }
+      } else {
+        // Show error if user not found
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('User @$username not found')),
+          );
+        }
+      }
+    } catch (e) {
+      debugPrint('Error handling mention tap: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Error loading user profile')),
+        );
+      }
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     // If the message is deleted, show a placeholder
-    if (message.isDeleted) {
+    if (widget.message.isDeleted) {
       return _buildDeletedMessage(context);
     }
 
     // If the message has expired, show a placeholder
-    if (message.isExpired()) {
+    if (widget.message.isExpired()) {
       return _buildExpiredMessage(context);
     }
 
     // Handle different message types
-    if (message.isTextMessage) {
+    if (widget.message.isTextMessage) {
       return _buildTextMessage(context);
-    } else if (message.isImageMessage) {
+    } else if (widget.message.isImageMessage) {
       return _buildImageMessage(context);
-    } else if (message.isVideoMessage) {
+    } else if (widget.message.isVideoMessage) {
       return _buildVideoMessage(context);
-    } else if (message.isAudioMessage) {
+    } else if (widget.message.isAudioMessage) {
       return _buildAudioMessage(context);
-    } else if (message.isLocationMessage) {
+    } else if (widget.message.isLocationMessage) {
       return _buildLocationMessage(context);
-    } else if (message.isLiveLocationMessage) {
+    } else if (widget.message.isLiveLocationMessage) {
       return _buildLiveLocationMessage(context);
     } else {
       return _buildUnsupportedMessage(context);
@@ -58,7 +107,7 @@ class MessageContent extends StatelessWidget {
         style: TextStyle(
           fontStyle: FontStyle.italic,
           fontSize: 14.0,
-          color: isFromCurrentUser ? Colors.white70 : Colors.black54,
+          color: widget.isFromCurrentUser ? Colors.white70 : Colors.black54,
         ),
         textAlign: TextAlign.left,
       ),
@@ -75,7 +124,7 @@ class MessageContent extends StatelessWidget {
         style: TextStyle(
           fontStyle: FontStyle.italic,
           fontSize: 14.0,
-          color: isFromCurrentUser ? Colors.white70 : Colors.black54,
+          color: widget.isFromCurrentUser ? Colors.white70 : Colors.black54,
         ),
         textAlign: TextAlign.left,
       ),
@@ -85,7 +134,7 @@ class MessageContent extends StatelessWidget {
   /// Build a text message
   Widget _buildTextMessage(BuildContext context) {
     // Check if the message has formatted text or mentions
-    final formattedText = message.getFormattedText();
+    final formattedText = widget.message.getFormattedText();
     if (formattedText != null) {
       return Container(
         width: double.infinity,
@@ -93,14 +142,14 @@ class MessageContent extends StatelessWidget {
         child: FormattedTextWidget(
           formattedText: formattedText,
           style: TextStyle(
-            color: isFromCurrentUser ? Colors.white : Colors.black87,
+            color: widget.isFromCurrentUser ? Colors.white : Colors.black87,
             fontSize: 16.0,
           ),
-          textAlign: isFromCurrentUser ? TextAlign.right : TextAlign.left,
+          textAlign:
+              widget.isFromCurrentUser ? TextAlign.right : TextAlign.left,
           onMentionTap: (username) {
-            // Handle mention tap
-            debugPrint('Mention tapped: $username');
-            // TODO: Show user profile or handle mention tap
+            // Handle mention tap - navigate to user profile
+            _handleMentionTap(username);
           },
         ),
       );
@@ -110,15 +159,16 @@ class MessageContent extends StatelessWidget {
     return Container(
       width: double.infinity, // Take full width of parent
       padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 10.0),
-      alignment:
-          isFromCurrentUser ? Alignment.centerRight : Alignment.centerLeft,
+      alignment: widget.isFromCurrentUser
+          ? Alignment.centerRight
+          : Alignment.centerLeft,
       child: Text(
-        message.content,
+        widget.message.content,
         style: TextStyle(
-          color: isFromCurrentUser ? Colors.white : Colors.black87,
+          color: widget.isFromCurrentUser ? Colors.white : Colors.black87,
           fontSize: 15.0,
         ),
-        textAlign: isFromCurrentUser ? TextAlign.right : TextAlign.left,
+        textAlign: widget.isFromCurrentUser ? TextAlign.right : TextAlign.left,
         softWrap: true,
       ),
     );
@@ -126,7 +176,7 @@ class MessageContent extends StatelessWidget {
 
   /// Build an image message
   Widget _buildImageMessage(BuildContext context) {
-    if (message.mediaData == null) {
+    if (widget.message.mediaData == null) {
       return _buildUnsupportedMessage(context);
     }
 
@@ -138,12 +188,12 @@ class MessageContent extends StatelessWidget {
         children: [
           // Image preview
           MediaPreview(
-            mediaData: message.mediaData!,
-            isFromCurrentUser: isFromCurrentUser,
+            mediaData: widget.message.mediaData!,
+            isFromCurrentUser: widget.isFromCurrentUser,
           ),
 
           // Caption (if any)
-          if (message.content.isNotEmpty)
+          if (widget.message.content.isNotEmpty)
             Container(
               width: double.infinity, // Full width for caption
               padding: const EdgeInsets.all(12.0),
@@ -156,7 +206,7 @@ class MessageContent extends StatelessWidget {
 
   /// Build a video message
   Widget _buildVideoMessage(BuildContext context) {
-    if (message.mediaData == null) {
+    if (widget.message.mediaData == null) {
       return _buildUnsupportedMessage(context);
     }
 
@@ -168,19 +218,20 @@ class MessageContent extends StatelessWidget {
         children: [
           // Video preview
           MediaPreview(
-            mediaData: message.mediaData!,
-            isFromCurrentUser: isFromCurrentUser,
+            mediaData: widget.message.mediaData!,
+            isFromCurrentUser: widget.isFromCurrentUser,
           ),
 
           // Caption (if any)
-          if (message.content.isNotEmpty)
+          if (widget.message.content.isNotEmpty)
             Container(
               width: double.infinity, // Full width for caption
               padding: const EdgeInsets.all(12.0),
               child: Text(
-                message.content,
+                widget.message.content,
                 style: TextStyle(
-                  color: isFromCurrentUser ? Colors.white : Colors.black87,
+                  color:
+                      widget.isFromCurrentUser ? Colors.white : Colors.black87,
                   fontSize: 14.0,
                 ),
                 textAlign: TextAlign.left,
@@ -193,7 +244,7 @@ class MessageContent extends StatelessWidget {
 
   /// Build an audio message
   Widget _buildAudioMessage(BuildContext context) {
-    if (message.mediaData == null) {
+    if (widget.message.mediaData == null) {
       return _buildUnsupportedMessage(context);
     }
 
@@ -205,13 +256,13 @@ class MessageContent extends StatelessWidget {
         children: [
           // Audio player
           AudioPlayerWidget(
-            mediaData: message.mediaData!,
-            messageId: message.id,
-            isFromCurrentUser: isFromCurrentUser,
+            mediaData: widget.message.mediaData!,
+            messageId: widget.message.id,
+            isFromCurrentUser: widget.isFromCurrentUser,
           ),
 
           // Caption (if any)
-          if (message.content.isNotEmpty)
+          if (widget.message.content.isNotEmpty)
             Container(
               width: double.infinity, // Full width for caption
               padding: const EdgeInsets.all(12.0),
@@ -224,7 +275,7 @@ class MessageContent extends StatelessWidget {
 
   /// Build a location message
   Widget _buildLocationMessage(BuildContext context) {
-    if (message.locationData == null) {
+    if (widget.message.locationData == null) {
       return _buildUnsupportedMessage(context);
     }
 
@@ -237,16 +288,16 @@ class MessageContent extends StatelessWidget {
           // Location preview
           LocationPreview(
             location: LatLng(
-              message.locationData!.latitude,
-              message.locationData!.longitude,
+              widget.message.locationData!.latitude,
+              widget.message.locationData!.longitude,
             ),
-            address: message.locationData!.address,
+            address: widget.message.locationData!.address,
             isLive: false,
-            isFromCurrentUser: isFromCurrentUser,
+            isFromCurrentUser: widget.isFromCurrentUser,
           ),
 
           // Caption (if any)
-          if (message.content.isNotEmpty)
+          if (widget.message.content.isNotEmpty)
             Container(
               width: double.infinity, // Full width for caption
               padding: const EdgeInsets.all(12.0),
@@ -259,13 +310,13 @@ class MessageContent extends StatelessWidget {
 
   /// Build a live location message
   Widget _buildLiveLocationMessage(BuildContext context) {
-    if (message.locationData == null) {
+    if (widget.message.locationData == null) {
       return _buildUnsupportedMessage(context);
     }
 
     // Check if the live location has expired
-    final bool isExpired = message.locationData!.expiresAt != null &&
-        DateTime.now().isAfter(message.locationData!.expiresAt!);
+    final bool isExpired = widget.message.locationData!.expiresAt != null &&
+        DateTime.now().isAfter(widget.message.locationData!.expiresAt!);
 
     return SizedBox(
       width: double.infinity, // Take full width of parent
@@ -276,17 +327,17 @@ class MessageContent extends StatelessWidget {
           // Location preview
           LocationPreview(
             location: LatLng(
-              message.locationData!.latitude,
-              message.locationData!.longitude,
+              widget.message.locationData!.latitude,
+              widget.message.locationData!.longitude,
             ),
-            address: message.locationData!.address,
+            address: widget.message.locationData!.address,
             isLive: !isExpired,
-            expiresAt: message.locationData!.expiresAt,
-            isFromCurrentUser: isFromCurrentUser,
+            expiresAt: widget.message.locationData!.expiresAt,
+            isFromCurrentUser: widget.isFromCurrentUser,
           ),
 
           // Caption (if any)
-          if (message.content.isNotEmpty)
+          if (widget.message.content.isNotEmpty)
             Container(
               width: double.infinity, // Full width for caption
               padding: const EdgeInsets.all(12.0),
@@ -307,7 +358,7 @@ class MessageContent extends StatelessWidget {
         style: TextStyle(
           fontStyle: FontStyle.italic,
           fontSize: 14.0,
-          color: isFromCurrentUser ? Colors.white70 : Colors.black54,
+          color: widget.isFromCurrentUser ? Colors.white70 : Colors.black54,
         ),
         textAlign: TextAlign.left,
       ),
@@ -317,29 +368,28 @@ class MessageContent extends StatelessWidget {
   /// Build a caption with support for mentions
   Widget _buildCaption(BuildContext context) {
     // Check if the caption has mentions
-    final formattedText = FormattedText.fromString(message.content);
+    final formattedText = FormattedText.fromString(widget.message.content);
     if (formattedText.segments
         .any((s) => s.type == FormattedSegmentType.mention)) {
       return FormattedTextWidget(
         formattedText: formattedText,
         style: TextStyle(
-          color: isFromCurrentUser ? Colors.white : Colors.black87,
+          color: widget.isFromCurrentUser ? Colors.white : Colors.black87,
           fontSize: 14.0,
         ),
         textAlign: TextAlign.left,
         onMentionTap: (username) {
           // Handle mention tap
-          debugPrint('Mention tapped in caption: $username');
-          // TODO: Show user profile or handle mention tap
+          _handleMentionTap(username);
         },
       );
     }
 
     // Regular caption
     return Text(
-      message.content,
+      widget.message.content,
       style: TextStyle(
-        color: isFromCurrentUser ? Colors.white : Colors.black87,
+        color: widget.isFromCurrentUser ? Colors.white : Colors.black87,
         fontSize: 14.0,
       ),
       textAlign: TextAlign.left,

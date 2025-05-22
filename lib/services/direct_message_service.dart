@@ -647,6 +647,56 @@ class DirectMessageService {
     return _typingStatusCache[userId] ?? false;
   }
 
+  /// Delete a message
+  Future<bool> deleteMessage(String messageId,
+      {bool forEveryone = false}) async {
+    if (_currentUserId == null) return false;
+
+    try {
+      if (forEveryone) {
+        // Mark as deleted for everyone
+        await _supabase
+            .from('direct_messages')
+            .update({
+              'is_deleted': true,
+              'content': '',
+              'media_data': null,
+              'location_data': null,
+            })
+            .eq('id', messageId)
+            .eq('sender_id', _currentUserId);
+      } else {
+        // TODO: Implement delete for me only (would require a separate table)
+        // For now, just mark as deleted for everyone
+        await _supabase
+            .from('direct_messages')
+            .update({
+              'is_deleted': true,
+              'content': '',
+              'media_data': null,
+              'location_data': null,
+            })
+            .eq('id', messageId)
+            .eq('sender_id', _currentUserId);
+      }
+
+      // Refresh messages to update the UI
+      final otherUserId = _messagesCache.keys.firstWhere(
+        (key) => _messagesCache[key]!.any((msg) => msg.id == messageId),
+        orElse: () => '',
+      );
+
+      if (otherUserId.isNotEmpty) {
+        await _refreshMessages(otherUserId);
+      }
+
+      return true;
+    } catch (e) {
+      debugPrint('Error deleting direct message: $e');
+      return false;
+    }
+  }
+
   /// Dispose resources
   void dispose() {
     _conversationsController.close();

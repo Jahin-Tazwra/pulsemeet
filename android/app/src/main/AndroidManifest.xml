@@ -5,7 +5,8 @@
     <application
         android:label="pulsemeet"
         android:name="${applicationName}"
-        android:icon="@mipmap/ic_launcher">
+        android:icon="@mipmap/ic_launcher"
+        android:enableOnBackInvokedCallback="true">
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -28,6 +29,26 @@
                 <data
                 android:scheme="com.example.pulsemeet"
                 android:host="login-callback"/>
+            </intent-filter>
+
+            <!-- Deep linking -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <!-- Accepts URIs that begin with "pulsemeet://" -->
+                <data android:scheme="pulsemeet" />
+            </intent-filter>
+
+            <!-- Web URLs -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <!-- Accepts URIs that begin with "https://pulsemeet.app/pulse" -->
+                <data android:scheme="https" android:host="pulsemeet.app" android:pathPrefix="/pulse" />
+                <!-- Accepts URIs that begin with "https://www.pulsemeet.app/pulse" -->
+                <data android:scheme="https" android:host="www.pulsemeet.app" android:pathPrefix="/pulse" />
             </intent-filter>
         </activity>
         <!-- Don't delete the meta-data below.

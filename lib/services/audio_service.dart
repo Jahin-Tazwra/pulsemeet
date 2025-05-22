@@ -212,7 +212,7 @@ class AudioService {
     try {
       // Create a temporary file for recording
       final tempDir = await getTemporaryDirectory();
-      _recordingPath = '${tempDir.path}/${_uuid.v4()}.aac';
+      _recordingPath = '${tempDir.path}/${_uuid.v4()}.m4a';
 
       debugPrint('Recording to: $_recordingPath');
 
@@ -223,7 +223,7 @@ class AudioService {
       // Start recording
       await _recorder.startRecorder(
         toFile: _recordingPath,
-        codec: Codec.aacADTS,
+        codec: Codec.aacMP4,
         audioSource: AudioSource.microphone,
       );
 
@@ -503,7 +503,7 @@ class AudioService {
         // For local files, use fromURI with file:// prefix
         await _player.startPlayer(
           fromURI: 'file://$url',
-          codec: Codec.aacADTS,
+          codec: Codec.aacMP4,
           whenFinished: () {
             debugPrint('Audio playback finished');
             _playbackStateController.add(PlaybackState(
@@ -647,17 +647,17 @@ class AudioService {
       }
 
       // Generate unique filename
-      final String fileName = '${_uuid.v4()}.aac';
+      final String fileName = '${_uuid.v4()}.m4a';
       final String filePath = 'pulse_$pulseId/$fileName';
       debugPrint('Storage path: $filePath');
 
       // Upload the file
       try {
-        await _supabase.storage.from('pulse_media').upload(
+        await _supabase.storage.from('audio').upload(
               filePath,
               audioFile,
               fileOptions: const FileOptions(
-                contentType: 'audio/aac',
+                contentType: 'audio/mpeg',
                 upsert: true,
               ),
             );
@@ -670,11 +670,10 @@ class AudioService {
         try {
           debugPrint('Checking if bucket exists...');
           final buckets = await _supabase.storage.listBuckets();
-          final bucketExists =
-              buckets.any((bucket) => bucket.name == 'pulse_media');
+          final bucketExists = buckets.any((bucket) => bucket.name == 'audio');
 
           if (!bucketExists) {
-            debugPrint('Bucket does not exist, creating...');
+            debugPrint('Audio bucket does not exist, creating...');
             // Note: Creating buckets requires admin privileges
             // This is just for debugging purposes
             return null;
@@ -699,7 +698,7 @@ class AudioService {
 
       // Get the public URL
       final String fileUrl =
-          _supabase.storage.from('pulse_media').getPublicUrl(filePath);
+          _supabase.storage.from('audio').getPublicUrl(filePath);
       debugPrint('File URL: $fileUrl');
 
       // Get duration
@@ -709,7 +708,7 @@ class AudioService {
       // Create MediaData object with local file path as fallback
       return MediaData(
         url: fileUrl,
-        mimeType: 'audio/aac',
+        mimeType: 'audio/mpeg',
         size: fileSize,
         duration: duration,
         localFilePath: audioFile.path, // Store local path as fallback
@@ -723,7 +722,7 @@ class AudioService {
         final int fileSize = await audioFile.length();
         return MediaData(
           url: 'file://${audioFile.path}',
-          mimeType: 'audio/aac',
+          mimeType: 'audio/mpeg',
           size: fileSize,
           duration: _recordingDuration,
           localFilePath: audioFile.path,

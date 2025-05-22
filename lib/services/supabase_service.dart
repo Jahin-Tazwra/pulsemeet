@@ -28,7 +28,15 @@ class SupabaseService {
   Stream<bool> get authStateChanges {
     // Start with the current auth state
     final initialState = _client.auth.currentSession != null;
-    debugPrint('Initial auth state: $initialState');
+    final currentUser = _client.auth.currentUser;
+    debugPrint(
+        'Initial auth state: $initialState, User: ${currentUser?.id ?? 'none'}');
+
+    if (currentUser != null) {
+      debugPrint(
+          'User details: Email: ${currentUser.email}, Phone: ${currentUser.phone}');
+      debugPrint('User metadata: ${currentUser.userMetadata}');
+    }
 
     // Create a StreamController to manage the stream
     final controller = StreamController<bool>.broadcast();
@@ -39,12 +47,62 @@ class SupabaseService {
     // Listen to auth state changes
     _client.auth.onAuthStateChange.listen((event) {
       final isAuthenticated = event.session != null;
+      final user = event.session?.user;
+
       debugPrint(
           'Auth state changed: ${event.event}, isAuthenticated: $isAuthenticated');
+
+      if (isAuthenticated && user != null) {
+        debugPrint('Authenticated user: ${user.id}');
+        debugPrint('User details: Email: ${user.email}, Phone: ${user.phone}');
+        debugPrint('User metadata: ${user.userMetadata}');
+
+        // Check if profile exists and create if needed
+        _ensureUserProfile(user);
+      }
+
       controller.add(isAuthenticated);
     });
 
     return controller.stream;
+  }
+
+  /// Ensure the user has a profile
+  Future<void> _ensureUserProfile(User user) async {
+    try {
+      // Check if profile exists
+      final profile = await _client
+          .from('profiles')
+          .select()
+          .eq('id', user.id)
+          .maybeSingle();
+
+      if (profile == null) {
+        debugPrint('Creating profile for user ${user.id}');
+
+        // Extract name and avatar from user metadata
+        final metadata = user.userMetadata;
+        final name = metadata?['name'] as String? ??
+            metadata?['full_name'] as String? ??
+            'User';
+        final avatarUrl = metadata?['avatar_url'] as String? ??
+            metadata?['picture'] as String?;
+
+        // Create profile
+        await _client.from('profiles').insert({
+          'id': user.id,
+          'username': name,
+          'avatar_url': avatarUrl,
+          'updated_at': DateTime.now().toIso8601String(),
+        });
+
+        debugPrint('Profile created successfully');
+      } else {
+        debugPrint('User profile already exists');
+      }
+    } catch (e) {
+      debugPrint('Error ensuring user profile: $e');
+    }
   }
 
   /// Sign in with phone number
@@ -823,16 +881,22 @@ class SupabaseService {
     final userId = currentUserId;
     if (userId == null) return 0;
 
-    final response = await _client
-        .from('pulse_waiting_list')
-        .select('position')
-        .eq('pulse_id', pulseId)
-        .eq('user_id', userId)
-        .eq('status', 'Waiting')
-        .single();
+    try {
+      final response = await _client
+          .from('pulse_waiting_list')
+          .select('position')
+          .eq('pulse_id', pulseId)
+          .eq('user_id', userId)
+          .eq('status', 'Waiting');
 
-    if (response == null) return 0;
-    return response['position'] as int? ?? 0;
+      // Handle case where user is not on waiting list (empty result)
+      if (response.isEmpty) return 0;
+
+      return response.first['position'] as int? ?? 0;
+    } catch (e) {
+      debugPrint('Error getting user waiting list position: $e');
+      return 0;
+    }
   }
 
   /// Send a chat message
@@ -993,6 +1057,67 @@ class SupabaseService {
     }
   }
 
+  /// Search for pulses by title or description
+  Future<List<Pulse>> searchPulses(String query) async {
+    if (query.isEmpty) return [];
+
+    try {
+      debugPrint('Searching for pulses with query: $query');
+
+      // Use a text search query with ILIKE for case-insensitive search
+      final response = await _client.rpc(
+        'get_pulses_with_coordinates',
+        params: {},
+      );
+
+      // Process the response which could be in different formats
+      List<Map<String, dynamic>> pulseDataList = [];
+
+      if (response is List) {
+        for (var item in response) {
+          if (item is Map<String, dynamic>) {
+            pulseDataList.add(item);
+          } else if (item is String) {
+            try {
+              final Map<String, dynamic> jsonData = jsonDecode(item);
+              pulseDataList.add(jsonData);
+            } catch (e) {
+              debugPrint('Error parsing JSON string: $e');
+            }
+          }
+        }
+      }
+
+      // Filter pulses by title or description containing the query
+      final filteredPulses = <Pulse>[];
+      final lowerQuery = query.toLowerCase();
+
+      for (final item in pulseDataList) {
+        try {
+          final pulse = Pulse.fromJson(item);
+
+          // Check if title or description contains the query (case-insensitive)
+          final titleMatch = pulse.title.toLowerCase().contains(lowerQuery);
+          final descriptionMatch =
+              pulse.description.toLowerCase().contains(lowerQuery);
+
+          if (titleMatch || descriptionMatch) {
+            filteredPulses.add(pulse);
+          }
+        } catch (e) {
+          debugPrint('Error processing pulse in search: $e');
+        }
+      }
+
+      debugPrint(
+          'Found ${filteredPulses.length} pulses matching query: $query');
+      return filteredPulses;
+    } catch (e) {
+      debugPrint('Error searching pulses: $e');
+      return [];
+    }
+  }
+
   /// Get pulses joined by the current user
   Future<List<Pulse>> getJoinedPulses() async {
     final userId = currentUserId;
@@ -1144,6 +1269,54 @@ class SupabaseService {
     } catch (e) {
       debugPrint('Error fetching pulse by ID: $e');
       return null;
+    }
+  }
+
+  /// Get a pulse by share code
+  Future<Pulse?> getPulseByShareCode(String shareCode) async {
+    try {
+      debugPrint('Fetching pulse with share code: $shareCode');
+
+      // Get the pulse details using the find_pulse_by_share_code function
+      final response = await _client.rpc(
+        'find_pulse_by_share_code',
+        params: {
+          'code': shareCode,
+        },
+      );
+
+      // Process the response
+      if (response is List && response.isNotEmpty) {
+        var item = response[0];
+        if (item is Map<String, dynamic>) {
+          return Pulse.fromJson(item);
+        }
+      }
+
+      return null;
+    } catch (e) {
+      debugPrint('Error fetching pulse by share code: $e');
+      return null;
+    }
+  }
+
+  /// Check if a string is a valid pulse share code
+  Future<bool> isValidPulseCode(String code) async {
+    try {
+      // Clean the code (remove spaces, make uppercase)
+      final cleanCode = code.trim().toUpperCase();
+
+      // Check if the code matches the expected format (6-8 alphanumeric characters)
+      if (!RegExp(r'^[A-Z0-9]{6,8}$').hasMatch(cleanCode)) {
+        return false;
+      }
+
+      // Check if the code exists in the database
+      final pulse = await getPulseByShareCode(cleanCode);
+      return pulse != null;
+    } catch (e) {
+      debugPrint('Error checking pulse code: $e');
+      return false;
     }
   }
 }

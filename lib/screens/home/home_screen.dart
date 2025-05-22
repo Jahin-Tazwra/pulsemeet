@@ -84,6 +84,7 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
       ),
       floatingActionButton: FloatingActionButton(
+        heroTag: 'home_screen_fab',
         onPressed: () {
           Navigator.push(
             context,

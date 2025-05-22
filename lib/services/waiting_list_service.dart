@@ -119,12 +119,17 @@ class WaitingListService {
           .select('position')
           .eq('pulse_id', pulseId)
           .eq('user_id', userId)
-          .eq('status', 'Waiting')
-          .single();
+          .eq('status', 'Waiting');
 
-      if (response == null) return 0;
+      // Handle case where user is not on waiting list (empty result)
+      if (response.isEmpty) {
+        // Update cache with 0 position
+        _userPositionCache[pulseId] = 0;
+        _userPositionController.add(0);
+        return 0;
+      }
 
-      final position = response['position'] as int? ?? 0;
+      final position = response.first['position'] as int? ?? 0;
 
       // Update cache
       _userPositionCache[pulseId] = position;

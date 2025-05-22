@@ -33,38 +33,38 @@ class DirectMessageScreen extends StatefulWidget {
 class _DirectMessageScreenState extends State<DirectMessageScreen> {
   final _directMessageService = DirectMessageService();
   final _scrollController = ScrollController();
-  
+
   Profile? _otherUserProfile;
   List<DirectMessage> _messages = [];
   DirectMessage? _replyToMessage;
   bool _isOtherUserTyping = false;
   bool _isLoading = true;
-  
+
   @override
   void initState() {
     super.initState();
     _otherUserProfile = widget.otherUserProfile;
     _initializeChat();
   }
-  
+
   @override
   void dispose() {
     _scrollController.dispose();
     super.dispose();
   }
-  
+
   /// Initialize the chat
   Future<void> _initializeChat() async {
     setState(() {
       _isLoading = true;
     });
-    
+
     // Subscribe to messages
     await _directMessageService.subscribeToMessages(widget.otherUserId);
-    
+
     // Subscribe to typing status
     await _directMessageService.subscribeToTypingStatus(widget.otherUserId);
-    
+
     // Listen for new messages
     _directMessageService.messagesStream.listen((messagesMap) {
       if (mounted) {
@@ -72,7 +72,7 @@ class _DirectMessageScreenState extends State<DirectMessageScreen> {
           _messages = messagesMap[widget.otherUserId] ?? [];
           _isLoading = false;
         });
-        
+
         // Scroll to bottom when new messages arrive
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (_scrollController.hasClients) {
@@ -85,7 +85,7 @@ class _DirectMessageScreenState extends State<DirectMessageScreen> {
         });
       }
     });
-    
+
     // Listen for typing status
     _directMessageService.typingStatusStream.listen((typingStatusMap) {
       if (mounted) {
@@ -94,7 +94,7 @@ class _DirectMessageScreenState extends State<DirectMessageScreen> {
         });
       }
     });
-    
+
     // Fetch other user profile if not provided
     if (_otherUserProfile == null) {
       try {
@@ -104,7 +104,7 @@ class _DirectMessageScreenState extends State<DirectMessageScreen> {
             .select()
             .eq('id', widget.otherUserId)
             .single();
-        
+
         if (mounted) {
           setState(() {
             _otherUserProfile = Profile.fromJson(response);
@@ -115,18 +115,18 @@ class _DirectMessageScreenState extends State<DirectMessageScreen> {
       }
     }
   }
-  
+
   /// Handle sending a text message
   Future<void> _handleSendText(String text) async {
     if (text.trim().isEmpty) return;
-    
+
     try {
       await _directMessageService.sendTextMessage(
         widget.otherUserId,
         text,
         replyToId: _replyToMessage?.id,
       );
-      
+
       // Clear reply
       setState(() {
         _replyToMessage = null;
@@ -139,7 +139,7 @@ class _DirectMessageScreenState extends State<DirectMessageScreen> {
       }
     }
   }
-  
+
   /// Handle sending an image
   Future<void> _handleSendImage(File image, String? caption) async {
     try {
@@ -149,7 +149,7 @@ class _DirectMessageScreenState extends State<DirectMessageScreen> {
         caption: caption,
         replyToId: _replyToMessage?.id,
       );
-      
+
       // Clear reply
       setState(() {
         _replyToMessage = null;
@@ -162,19 +162,19 @@ class _DirectMessageScreenState extends State<DirectMessageScreen> {
       }
     }
   }
-  
+
   /// Handle canceling a reply
   void _handleCancelReply() {
     setState(() {
       _replyToMessage = null;
     });
   }
-  
+
   /// Handle message tap
   void _handleMessageTap(DirectMessage message) {
     // No action for now
   }
-  
+
   /// Handle message long press
   void _handleMessageLongPress(DirectMessage message) {
     showModalBottomSheet(
@@ -198,19 +198,78 @@ class _DirectMessageScreenState extends State<DirectMessageScreen> {
               title: const Text('Delete'),
               onTap: () {
                 Navigator.pop(context);
-                // TODO: Implement delete functionality
+                _showDeleteOptions(message);
               },
             ),
         ],
       ),
     );
   }
-  
+
   /// Handle reaction tap
   void _handleReactionTap(String emoji) {
     // TODO: Implement reaction functionality
   }
-  
+
+  /// Show delete options
+  void _showDeleteOptions(DirectMessage message) {
+    showModalBottomSheet(
+      context: context,
+      builder: (context) => Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          ListTile(
+            leading: const Icon(Icons.delete),
+            title: const Text('Delete for everyone'),
+            onTap: () {
+              Navigator.pop(context);
+              _deleteMessage(message, forEveryone: true);
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.delete_outline),
+            title: const Text('Delete for me'),
+            onTap: () {
+              Navigator.pop(context);
+              _deleteMessage(message, forEveryone: false);
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Delete a message
+  Future<void> _deleteMessage(DirectMessage message,
+      {bool forEveryone = false}) async {
+    try {
+      final success = await _directMessageService.deleteMessage(
+        message.id,
+        forEveryone: forEveryone,
+      );
+
+      if (success && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(forEveryone
+                ? 'Message deleted for everyone'
+                : 'Message deleted for you'),
+          ),
+        );
+      } else if (!success && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Failed to delete message')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error deleting message: ${e.toString()}')),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -221,7 +280,8 @@ class _DirectMessageScreenState extends State<DirectMessageScreen> {
               Navigator.push(
                 context,
                 MaterialPageRoute(
-                  builder: (context) => UserProfileScreen(userId: widget.otherUserId),
+                  builder: (context) =>
+                      UserProfileScreen(userId: widget.otherUserId),
                 ),
               );
             }
@@ -238,9 +298,9 @@ class _DirectMessageScreenState extends State<DirectMessageScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    _otherUserProfile?.displayName ?? 
-                    _otherUserProfile?.username ?? 
-                    'User',
+                    _otherUserProfile?.displayName ??
+                        _otherUserProfile?.username ??
+                        'User',
                     style: const TextStyle(fontSize: 16.0),
                   ),
                   if (_isOtherUserTyping)
@@ -264,7 +324,8 @@ class _DirectMessageScreenState extends State<DirectMessageScreen> {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (context) => UserProfileScreen(userId: widget.otherUserId),
+                    builder: (context) =>
+                        UserProfileScreen(userId: widget.otherUserId),
                   ),
                 );
               }
@@ -279,7 +340,7 @@ class _DirectMessageScreenState extends State<DirectMessageScreen> {
           Expanded(
             child: _buildMessagesList(),
           ),
-          
+
           // Typing indicator
           if (_isOtherUserTyping)
             Padding(
@@ -288,22 +349,23 @@ class _DirectMessageScreenState extends State<DirectMessageScreen> {
                 alignment: Alignment.centerLeft,
                 child: TypingIndicator(
                   typingUsers: [
-                    _otherUserProfile ?? 
-                    Profile(
-                      id: widget.otherUserId,
-                      createdAt: DateTime.now(),
-                      updatedAt: DateTime.now(),
-                      lastSeenAt: DateTime.now(),
-                    ),
+                    _otherUserProfile ??
+                        Profile(
+                          id: widget.otherUserId,
+                          createdAt: DateTime.now(),
+                          updatedAt: DateTime.now(),
+                          lastSeenAt: DateTime.now(),
+                        ),
                   ],
                   color: Theme.of(context).colorScheme.secondary,
                 ),
               ),
             ),
-          
+
           // Message input
           MessageInput(
-            pulseId: widget.otherUserId, // Using otherUserId as pulseId for compatibility
+            pulseId: widget
+                .otherUserId, // Using otherUserId as pulseId for compatibility
             onSendText: _handleSendText,
             onSendImage: _handleSendImage,
             onSendVideo: (_, __) {}, // Not implemented yet
@@ -311,7 +373,7 @@ class _DirectMessageScreenState extends State<DirectMessageScreen> {
             onSendLocation: (_) {}, // Not implemented yet
             onSendLiveLocation: (_, __) {}, // Not implemented yet
             onCancelReply: _handleCancelReply,
-            replyToMessage: _replyToMessage != null 
+            replyToMessage: _replyToMessage != null
                 ? ChatMessage(
                     id: _replyToMessage!.id,
                     pulseId: widget.otherUserId,
@@ -328,14 +390,14 @@ class _DirectMessageScreenState extends State<DirectMessageScreen> {
       ),
     );
   }
-  
+
   Widget _buildMessagesList() {
     if (_isLoading) {
       return const Center(
         child: CircularProgressIndicator(),
       );
     }
-    
+
     if (_messages.isEmpty) {
       return Center(
         child: Column(
@@ -362,7 +424,7 @@ class _DirectMessageScreenState extends State<DirectMessageScreen> {
         ),
       );
     }
-    
+
     // Group messages by date
     final groupedMessages = <String, List<DirectMessage>>{};
     for (final message in _messages) {
@@ -372,22 +434,22 @@ class _DirectMessageScreenState extends State<DirectMessageScreen> {
       }
       groupedMessages[date]!.add(message);
     }
-    
+
     // Flatten the grouped messages with date separators
     final flattenedMessages = <Widget>[];
     final sortedDates = groupedMessages.keys.toList()..sort();
-    
+
     for (final date in sortedDates) {
       // Add date separator
       flattenedMessages.add(DateSeparator(date: DateTime.parse(date)));
-      
+
       // Add messages for this date
       final messages = groupedMessages[date]!;
       for (int i = 0; i < messages.length; i++) {
         final message = messages[i];
         final previousMessage = i > 0 ? messages[i - 1] : null;
         final nextMessage = i < messages.length - 1 ? messages[i + 1] : null;
-        
+
         // Convert DirectMessage to ChatMessage for compatibility with MessageBubble
         final chatMessage = ChatMessage(
           id: message.id,
@@ -406,7 +468,7 @@ class _DirectMessageScreenState extends State<DirectMessageScreen> {
           replyToId: message.replyToId,
           editedAt: message.editedAt,
         );
-        
+
         // Convert previous and next messages if they exist
         final previousChatMessage = previousMessage != null
             ? ChatMessage(
@@ -418,7 +480,7 @@ class _DirectMessageScreenState extends State<DirectMessageScreen> {
                 createdAt: previousMessage.createdAt,
               )
             : null;
-        
+
         final nextChatMessage = nextMessage != null
             ? ChatMessage(
                 id: nextMessage.id,
@@ -429,7 +491,7 @@ class _DirectMessageScreenState extends State<DirectMessageScreen> {
                 createdAt: nextMessage.createdAt,
               )
             : null;
-        
+
         // Find reply message if this message is a reply
         DirectMessage? replyToMessage;
         if (message.replyToId != null) {
@@ -446,19 +508,20 @@ class _DirectMessageScreenState extends State<DirectMessageScreen> {
             ),
           );
         }
-        
+
         // Convert reply message to ChatMessage if it exists
-        final replyToChatMessage = replyToMessage != null && replyToMessage.id.isNotEmpty
-            ? ChatMessage(
-                id: replyToMessage.id,
-                pulseId: widget.otherUserId,
-                senderId: replyToMessage.senderId,
-                messageType: replyToMessage.messageType,
-                content: replyToMessage.content,
-                createdAt: replyToMessage.createdAt,
-              )
-            : null;
-        
+        final replyToChatMessage =
+            replyToMessage != null && replyToMessage.id.isNotEmpty
+                ? ChatMessage(
+                    id: replyToMessage.id,
+                    pulseId: widget.otherUserId,
+                    senderId: replyToMessage.senderId,
+                    messageType: replyToMessage.messageType,
+                    content: replyToMessage.content,
+                    createdAt: replyToMessage.createdAt,
+                  )
+                : null;
+
         flattenedMessages.add(
           MessageBubble(
             message: chatMessage,
@@ -473,7 +536,7 @@ class _DirectMessageScreenState extends State<DirectMessageScreen> {
         );
       }
     }
-    
+
     return ListView(
       controller: _scrollController,
       padding: const EdgeInsets.all(8.0),

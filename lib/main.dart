@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:app_links/app_links.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:supabase_flutter/supabase_flutter.dart' hide Provider;
 import 'package:provider/provider.dart';
@@ -18,8 +19,14 @@ import 'screens/connections/user_search_screen.dart';
 import 'screens/connections/connections_screen.dart';
 import 'screens/connections/connection_requests_screen.dart';
 import 'screens/profile/ratings_screen.dart';
+import 'screens/pulse/pulse_details_screen.dart';
+import 'screens/pulse/pulse_search_screen.dart';
 import 'models/profile.dart' as app_models;
 import 'providers/theme_provider.dart';
+import 'services/analytics_service.dart';
+
+// Global navigator key for accessing the navigator from anywhere
+final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -74,14 +81,61 @@ class _MyAppState extends State<MyApp> {
 
     // Handle cold-start deep link
     _appLinks.getInitialAppLink().then((uri) async {
-      if (uri != null && uri.scheme == 'com.example.pulsemeet') {
+      if (uri != null) {
         debugPrint('Processing cold-start deep link: $uri');
-        try {
-          final response =
-              await Supabase.instance.client.auth.getSessionFromUrl(uri);
-          debugPrint('Cold-start auth response: ${response.session}');
-        } catch (e) {
-          debugPrint('Error processing cold-start deep link: $e');
+
+        // Handle auth deep links
+        if (uri.scheme == 'com.example.pulsemeet' &&
+            uri.host == 'login-callback') {
+          try {
+            debugPrint('Processing cold-start login callback: $uri');
+
+            // Extract the fragment (part after #) which contains the auth data
+            final fragment = uri.fragment;
+            if (fragment.isNotEmpty) {
+              debugPrint('Auth fragment found: $fragment');
+
+              // Create a new URI with the fragment converted to query parameters
+              final authUri = Uri.parse('https://dummy.com/auth?$fragment');
+
+              // Extract the access token
+              final accessToken = authUri.queryParameters['access_token'];
+              if (accessToken != null) {
+                debugPrint('Access token found, setting session');
+
+                // Parse refresh token if available
+                final refreshToken = authUri.queryParameters['refresh_token'];
+
+                debugPrint(
+                    'Auth details: accessToken length=${accessToken.length}, refreshToken=${refreshToken != null ? 'available' : 'not available'}');
+
+                try {
+                  // Set the session directly
+                  await Supabase.instance.client.auth.setSession(accessToken);
+
+                  // Get the current user to verify authentication worked
+                  final currentUser = Supabase.instance.client.auth.currentUser;
+                  if (currentUser != null) {
+                    debugPrint('User authenticated: ${currentUser.id}');
+                    debugPrint('User email: ${currentUser.email}');
+                  } else {
+                    debugPrint(
+                        'Failed to authenticate user - currentUser is null');
+                  }
+
+                  debugPrint('Auth state updated successfully');
+                } catch (e) {
+                  debugPrint('Error setting session: $e');
+                }
+              }
+            }
+          } catch (e) {
+            debugPrint('Error processing cold-start auth deep link: $e');
+          }
+        }
+        // Handle pulse deep links
+        else if (_isPulseDeepLink(uri)) {
+          _handlePulseDeepLink(uri);
         }
       }
     });
@@ -89,19 +143,90 @@ class _MyAppState extends State<MyApp> {
     // Listen for warm-start deep links
     _sub = _appLinks.uriLinkStream.listen((uri) async {
       debugPrint('Processing warm-start deep link: $uri');
-      if (uri.scheme == 'com.example.pulsemeet') {
-        try {
-          final response =
-              await Supabase.instance.client.auth.getSessionFromUrl(uri);
-          debugPrint('Warm-start auth response: ${response.session}');
 
-          // Force refresh the auth state
-          final refreshResponse =
-              await Supabase.instance.client.auth.refreshSession();
-          debugPrint('Session after refresh: ${refreshResponse.session}');
+      // Handle auth deep links
+      if (uri.scheme == 'com.example.pulsemeet' &&
+          uri.host == 'login-callback') {
+        try {
+          debugPrint('Processing login callback: $uri');
+
+          // Extract the fragment (part after #) which contains the auth data
+          final fragment = uri.fragment;
+          if (fragment.isNotEmpty) {
+            debugPrint('Auth fragment found: $fragment');
+
+            // Create a new URI with the fragment converted to query parameters
+            final authUri = Uri.parse('https://dummy.com/auth?$fragment');
+
+            // Extract the access token
+            final accessToken = authUri.queryParameters['access_token'];
+            if (accessToken != null) {
+              debugPrint('Access token found, setting session');
+
+              // Parse refresh token if available
+              final refreshToken = authUri.queryParameters['refresh_token'];
+
+              debugPrint(
+                  'Auth details: accessToken length=${accessToken.length}, refreshToken=${refreshToken != null ? 'available' : 'not available'}');
+
+              try {
+                // Try to manually set the session
+                await Supabase.instance.client.auth.setSession(accessToken);
+
+                // Get the current user to verify authentication worked
+                final currentUser = Supabase.instance.client.auth.currentUser;
+                if (currentUser != null) {
+                  debugPrint('User authenticated: ${currentUser.id}');
+                  debugPrint('User email: ${currentUser.email}');
+
+                  // Force a refresh of the auth state
+                  await Supabase.instance.client.auth.refreshSession();
+
+                  // Navigate to home screen
+                  if (navigatorKey.currentContext != null) {
+                    Navigator.of(navigatorKey.currentContext!)
+                        .pushAndRemoveUntil(
+                            MaterialPageRoute(
+                                builder: (context) => const HomeScreen()),
+                            (route) => false);
+                  }
+                } else {
+                  debugPrint(
+                      'Failed to authenticate user - currentUser is null');
+                }
+
+                debugPrint('Auth state updated successfully');
+              } catch (e) {
+                debugPrint('Error during authentication: $e');
+
+                // Try to get the session from URL as a fallback
+                try {
+                  final response = await Supabase.instance.client.auth
+                      .getSessionFromUrl(uri);
+                  debugPrint('Got session from URL: ${response.session}');
+
+                  // Session is always available in the response
+                  // Navigate to home screen
+                  if (navigatorKey.currentContext != null) {
+                    Navigator.of(navigatorKey.currentContext!)
+                        .pushAndRemoveUntil(
+                            MaterialPageRoute(
+                                builder: (context) => const HomeScreen()),
+                            (route) => false);
+                  }
+                } catch (e2) {
+                  debugPrint('Error in fallback authentication: $e2');
+                }
+              }
+            }
+          }
         } catch (e) {
-          debugPrint('Error processing warm-start deep link: $e');
+          debugPrint('Error processing warm-start auth deep link: $e');
         }
+      }
+      // Handle pulse deep links
+      else if (_isPulseDeepLink(uri)) {
+        _handlePulseDeepLink(uri);
       }
     }, onError: (err) {
       debugPrint('🔗 Deep link error: $err');
@@ -113,6 +238,115 @@ class _MyAppState extends State<MyApp> {
     _sub.cancel();
     super.dispose();
   }
+
+  /// Check if a URI is a pulse deep link
+  bool _isPulseDeepLink(Uri uri) {
+    // Check for app scheme links (pulsemeet://pulse/CODE)
+    if (uri.scheme == 'pulsemeet' && uri.path.startsWith('/pulse/')) {
+      return true;
+    }
+
+    // Check for web links (https://pulsemeet.app/pulse/CODE)
+    if ((uri.scheme == 'http' || uri.scheme == 'https') &&
+        (uri.host == 'pulsemeet.app' || uri.host == 'www.pulsemeet.app') &&
+        uri.path.startsWith('/pulse/')) {
+      return true;
+    }
+
+    return false;
+  }
+
+  /// Handle a pulse deep link
+  void _handlePulseDeepLink(Uri uri) async {
+    debugPrint('Handling pulse deep link: $uri');
+
+    // Extract the pulse code from the URI
+    String? pulseCode;
+
+    if (uri.pathSegments.length >= 2 && uri.pathSegments[0] == 'pulse') {
+      pulseCode = uri.pathSegments[1];
+    }
+
+    if (pulseCode == null || pulseCode.isEmpty) {
+      debugPrint('Invalid pulse code in deep link');
+      return;
+    }
+
+    debugPrint('Extracted pulse code: $pulseCode');
+
+    // Check if this is a new install
+    final prefs = await SharedPreferences.getInstance();
+    final isFirstRun = prefs.getBool('is_first_run') ?? true;
+
+    if (isFirstRun) {
+      // Track app install from shared link
+      final analyticsService = AnalyticsService();
+      await analyticsService.trackAppInstallFromShare(pulseCode);
+
+      // Mark as not first run
+      await prefs.setBool('is_first_run', false);
+    }
+
+    // Store the pulse code to be handled after the app is fully initialized
+    _pendingPulseCode = pulseCode;
+
+    // If the app is already initialized, navigate to the pulse
+    if (_isAppInitialized) {
+      _navigateToPulseByCode(pulseCode);
+    }
+  }
+
+  /// Navigate to a pulse by code
+  Future<void> _navigateToPulseByCode(String code) async {
+    debugPrint('Navigating to pulse with code: $code');
+
+    // Get the SupabaseService
+    final supabaseService = Provider.of<SupabaseService>(
+      navigatorKey.currentContext!,
+      listen: false,
+    );
+
+    // Check if the user is authenticated
+    if (!supabaseService.isAuthenticated) {
+      debugPrint('User not authenticated, storing pulse code for later');
+      // Store the code to be handled after authentication
+      _pendingPulseCode = code;
+      return;
+    }
+
+    // Look up the pulse by code
+    final pulse = await supabaseService.getPulseByShareCode(code);
+
+    if (pulse == null) {
+      debugPrint('Pulse not found for code: $code');
+
+      // Show a snackbar if the app is initialized
+      if (_isAppInitialized && navigatorKey.currentContext != null) {
+        ScaffoldMessenger.of(navigatorKey.currentContext!).showSnackBar(
+          SnackBar(content: Text('Pulse not found for code: $code')),
+        );
+      }
+      return;
+    }
+
+    // Track pulse view from shared link
+    final analyticsService = AnalyticsService();
+    await analyticsService.trackPulseViewFromShare(pulse.id, code);
+
+    // Navigate to the pulse details screen
+    if (_isAppInitialized && navigatorKey.currentContext != null) {
+      Navigator.push(
+        navigatorKey.currentContext!,
+        MaterialPageRoute(
+          builder: (context) => PulseDetailsScreen(pulse: pulse),
+        ),
+      );
+    }
+  }
+
+  // Variables for handling deep links
+  String? _pendingPulseCode;
+  bool _isAppInitialized = false;
 
   @override
   Widget build(BuildContext context) {
@@ -128,6 +362,7 @@ class _MyAppState extends State<MyApp> {
     return MaterialApp(
       title: 'PulseMeet',
       debugShowCheckedModeBanner: false,
+      navigatorKey: navigatorKey,
       theme: ThemeData(
         useMaterial3: true,
         colorScheme: ColorScheme.fromSeed(
@@ -344,6 +579,7 @@ class _MyAppState extends State<MyApp> {
           themeProvider.flutterThemeMode, // Use user preference or system theme
       routes: {
         '/user_search': (context) => const UserSearchScreen(),
+        '/pulse_search': (context) => const PulseSearchScreen(),
         '/connections': (context) => const ConnectionsScreen(),
         '/connection_requests': (context) => const ConnectionRequestsScreen(),
         '/ratings': (context) {
@@ -372,13 +608,18 @@ class _MyAppState extends State<MyApp> {
           debugPrint(
               'Navigation decision: isAuthenticated=$isAuthenticated, navigating to ${isAuthenticated ? 'HomeScreen' : 'AuthScreen'}');
 
-          // If user is authenticated, refresh theme preferences
-          if (isAuthenticated) {
-            // Refresh theme preferences
-            final themeProvider =
-                Provider.of<ThemeProvider>(context, listen: false);
-            themeProvider.refreshThemePreference();
-          }
+          // Theme preferences are now loaded automatically by ThemeProvider
+
+          // Mark the app as initialized
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            _isAppInitialized = true;
+
+            // Check if we have a pending pulse code to handle
+            if (_pendingPulseCode != null && isAuthenticated) {
+              _navigateToPulseByCode(_pendingPulseCode!);
+              _pendingPulseCode = null;
+            }
+          });
 
           // Navigate based on authentication state
           return isAuthenticated ? const HomeScreen() : const AuthScreen();

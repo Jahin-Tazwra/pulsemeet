@@ -12,7 +12,10 @@ class ThemeProvider extends ChangeNotifier {
 
   /// Constructor
   ThemeProvider(this._supabaseService) {
-    _loadThemePreference();
+    // Defer the initial load to avoid calling notifyListeners during build
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadThemePreference();
+    });
   }
 
   /// Get the map theme controller

@@ -37,7 +37,9 @@ class _MyPulsesTabState extends State<MyPulsesTab>
         PulseNotifier().onPulseCreated.listen((newPulse) {
       debugPrint('MyPulsesTab: Received pulse created event: ${newPulse.id}');
       // Refresh the list of pulses when a new pulse is created
-      _fetchMyPulses();
+      if (mounted) {
+        _fetchMyPulses();
+      }
     });
   }
 
@@ -49,6 +51,8 @@ class _MyPulsesTabState extends State<MyPulsesTab>
   }
 
   Future<void> _fetchMyPulses() async {
+    if (!mounted) return;
+
     setState(() {
       _isLoading = true;
       _errorMessage = null;
@@ -61,6 +65,7 @@ class _MyPulsesTabState extends State<MyPulsesTab>
       // Get current user ID
       final userId = supabaseService.currentUserId;
       if (userId == null) {
+        if (!mounted) return;
         setState(() {
           _isLoading = false;
           _errorMessage = 'User not authenticated';
@@ -72,6 +77,7 @@ class _MyPulsesTabState extends State<MyPulsesTab>
       final createdPulses = await supabaseService.getCreatedPulses();
       final joinedPulses = await supabaseService.getJoinedPulses();
 
+      if (!mounted) return;
       setState(() {
         _createdPulses = createdPulses;
         _joinedPulses = joinedPulses;
@@ -79,6 +85,7 @@ class _MyPulsesTabState extends State<MyPulsesTab>
       });
     } catch (e) {
       debugPrint('Error fetching pulses: $e');
+      if (!mounted) return;
       setState(() {
         _isLoading = false;
         _errorMessage = 'Error fetching pulses: ${e.toString()}';

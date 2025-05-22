@@ -25,6 +25,8 @@ class Pulse {
   final PulseStatus status;
   final int waitingListCount;
   double? distanceMeters;
+  final String? shareCode;
+  final String? shareUrl;
   final DateTime createdAt;
   final DateTime updatedAt;
 
@@ -45,6 +47,8 @@ class Pulse {
     this.status = PulseStatus.open,
     this.waitingListCount = 0,
     this.distanceMeters,
+    this.shareCode,
+    this.shareUrl,
     required this.createdAt,
     required this.updatedAt,
   });
@@ -153,6 +157,8 @@ class Pulse {
         maxParticipants: json['max_participants'] != null
             ? parseNumber<int>(json['max_participants'])
             : null,
+        shareCode: json['share_code']?.toString(),
+        shareUrl: json['share_url']?.toString(),
         participantCount:
             parseNumber<int>(json['participant_count'], defaultValue: 0),
         isActive: json['is_active'] == true,
@@ -209,6 +215,8 @@ class Pulse {
       'status': statusToString(status),
       'participant_count': participantCount,
       'waiting_list_count': waitingListCount,
+      'share_code': shareCode,
+      'share_url': shareUrl,
       'created_at': createdAt.toIso8601String(),
       'updated_at': updatedAt.toIso8601String(),
     };
@@ -228,6 +236,8 @@ class Pulse {
     bool? isActive,
     PulseStatus? status,
     int? waitingListCount,
+    String? shareCode,
+    String? shareUrl,
   }) {
     return Pulse(
       id: id,
@@ -245,6 +255,8 @@ class Pulse {
       isActive: isActive ?? this.isActive,
       status: status ?? this.status,
       waitingListCount: waitingListCount ?? this.waitingListCount,
+      shareCode: shareCode ?? this.shareCode,
+      shareUrl: shareUrl ?? this.shareUrl,
       distanceMeters: distanceMeters,
       createdAt: createdAt,
       updatedAt: DateTime.now(),
@@ -292,5 +304,44 @@ class Pulse {
   int get capacityPercentage {
     if (maxParticipants == null || maxParticipants == 0) return 0;
     return (participantCount / maxParticipants! * 100).round().clamp(0, 100);
+  }
+
+  /// Check if the pulse has a share code
+  bool get hasShareCode => shareCode != null && shareCode!.isNotEmpty;
+
+  /// Get the share message for this pulse
+  String get shareMessage {
+    final statusText = isCurrentlyActive
+        ? 'happening now'
+        : isUpcoming
+            ? 'starting ${_getRelativeTimeText(startTime)}'
+            : 'ended ${_getRelativeTimeText(endTime)}';
+
+    return 'Join me at "$title" $statusText! Use code: $shareCode or click the link to join: $shareUrl';
+  }
+
+  /// Get relative time text for sharing
+  String _getRelativeTimeText(DateTime time) {
+    final now = DateTime.now();
+    final difference = time.difference(now);
+
+    if (difference.inDays.abs() > 7) {
+      // Format as date if more than a week away
+      return 'on ${time.day}/${time.month}/${time.year}';
+    } else if (difference.inDays.abs() > 0) {
+      // Format as days if more than a day away
+      final days = difference.inDays.abs();
+      return difference.isNegative ? '$days days ago' : 'in $days days';
+    } else if (difference.inHours.abs() > 0) {
+      // Format as hours if more than an hour away
+      final hours = difference.inHours.abs();
+      return difference.isNegative ? '$hours hours ago' : 'in $hours hours';
+    } else {
+      // Format as minutes if less than an hour away
+      final minutes = difference.inMinutes.abs();
+      return difference.isNegative
+          ? '$minutes minutes ago'
+          : 'in $minutes minutes';
+    }
   }
 }

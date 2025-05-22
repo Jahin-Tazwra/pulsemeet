@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:pulsemeet/controllers/map_theme_controller.dart';
 import 'package:pulsemeet/models/pulse.dart';
 import 'package:pulsemeet/models/profile.dart';
@@ -14,6 +15,7 @@ import 'package:pulsemeet/services/pulse_participant_service.dart';
 import 'package:pulsemeet/services/waiting_list_service.dart';
 import 'package:pulsemeet/services/profile_service.dart';
 import 'package:pulsemeet/services/rating_service.dart';
+import 'package:pulsemeet/services/analytics_service.dart';
 import 'package:pulsemeet/screens/pulse/pulse_chat_screen.dart';
 import 'package:pulsemeet/screens/profile/user_profile_screen.dart';
 import 'package:pulsemeet/utils/map_styles.dart';
@@ -270,6 +272,35 @@ class _PulseDetailsScreenState extends State<PulseDetailsScreen> {
     } catch (e) {
       debugPrint('Error checking waiting list status: $e');
     }
+  }
+
+  /// Share the pulse with others
+  void _sharePulse() async {
+    // Check if the pulse has a share code
+    if (widget.pulse.shareCode == null || widget.pulse.shareCode!.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('This pulse cannot be shared at this time'),
+        ),
+      );
+      return;
+    }
+
+    // Create the share message
+    final shareMessage = widget.pulse.shareMessage;
+
+    // Track the share event
+    final analyticsService = AnalyticsService();
+    await analyticsService.trackPulseShare(
+      widget.pulse.id,
+      widget.pulse.shareCode!,
+    );
+
+    // Share the pulse
+    await Share.share(
+      shareMessage,
+      subject: 'Join me at ${widget.pulse.title}',
+    );
   }
 
   void _setupMapElements() {
@@ -769,6 +800,12 @@ class _PulseDetailsScreenState extends State<PulseDetailsScreen> {
       appBar: AppBar(
         title: const Text('Pulse Details'),
         actions: [
+          // Share button
+          IconButton(
+            icon: const Icon(Icons.share),
+            tooltip: 'Share Pulse',
+            onPressed: _sharePulse,
+          ),
           if (isCreator)
             IconButton(
               icon: const Icon(Icons.edit),
@@ -1020,7 +1057,100 @@ class _PulseDetailsScreenState extends State<PulseDetailsScreen> {
                   ),
                   const SizedBox(height: 8),
                   Text(widget.pulse.description),
-                  const SizedBox(height: 24),
+                  const SizedBox(height: 16),
+
+                  // Pulse share code (if available)
+                  if (widget.pulse.shareCode != null &&
+                      widget.pulse.shareCode!.isNotEmpty)
+                    Container(
+                      margin: const EdgeInsets.only(bottom: 16),
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color:
+                            Theme.of(context).colorScheme.primary.withAlpha(25),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: Theme.of(context)
+                              .colorScheme
+                              .primary
+                              .withAlpha(50),
+                        ),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Icon(
+                                Icons.share,
+                                color: Theme.of(context).colorScheme.primary,
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'Share this Pulse',
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .titleSmall
+                                          ?.copyWith(
+                                            color: Theme.of(context)
+                                                .colorScheme
+                                                .primary,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      'Use code: ${widget.pulse.shareCode}',
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .bodyMedium
+                                          ?.copyWith(
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              IconButton(
+                                icon: const Icon(Icons.copy),
+                                tooltip: 'Copy Code',
+                                onPressed: () {
+                                  // Copy the code to clipboard
+                                  Share.share(widget.pulse.shareCode!);
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text('Code copied to clipboard'),
+                                      duration: Duration(seconds: 1),
+                                    ),
+                                  );
+                                },
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+                          SizedBox(
+                            width: double.infinity,
+                            child: ElevatedButton.icon(
+                              onPressed: _sharePulse,
+                              icon: const Icon(Icons.share),
+                              label: const Text('Share with Friends'),
+                              style: ElevatedButton.styleFrom(
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 12),
+                                backgroundColor:
+                                    Theme.of(context).colorScheme.primary,
+                                foregroundColor: Colors.white,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  const SizedBox(height: 8),
                   // Waiting list info (only shown if user is on waiting list)
                   StreamBuilder<int>(
                     stream: _waitingListService.userPositionStream,

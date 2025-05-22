@@ -521,7 +521,7 @@ class ChatService {
     final MediaData tempMediaData = MediaData(
       url: 'file://${audioFile.path}',
       thumbnailUrl: null,
-      mimeType: 'audio/${audioFile.path.split('.').last}',
+      mimeType: 'audio/mpeg',
       size: audioFile.lengthSync(),
       width: 0,
       height: 0,

@@ -42,7 +42,9 @@ class _NearbyPulsesTabState extends State<NearbyPulsesTab> {
       debugPrint(
           'NearbyPulsesTab: Received pulse created event: ${newPulse.id}');
       // Refresh the list of nearby pulses when a new pulse is created
-      _fetchNearbyPulses();
+      if (mounted) {
+        _fetchNearbyPulses();
+      }
     });
   }
 
@@ -103,6 +105,8 @@ class _NearbyPulsesTabState extends State<NearbyPulsesTab> {
   }
 
   Future<void> _fetchNearbyPulses() async {
+    if (!mounted) return;
+
     if (_currentPosition == null) {
       // If we don't have a position yet, try to get it first
       await _getCurrentLocation();
@@ -257,9 +261,21 @@ class _NearbyPulsesTabState extends State<NearbyPulsesTab> {
             ),
           ),
           actions: [
+            // Pulse search button
             IconButton(
               icon: const Icon(
-                Icons.search,
+                Icons.travel_explore,
+                color: Colors.white, // White icon
+              ),
+              onPressed: () {
+                Navigator.pushNamed(context, '/pulse_search');
+              },
+              tooltip: 'Search for pulses',
+            ),
+            // User search button
+            IconButton(
+              icon: const Icon(
+                Icons.person_search,
                 color: Colors.white, // White icon
               ),
               onPressed: () {
@@ -277,8 +293,18 @@ class _NearbyPulsesTabState extends State<NearbyPulsesTab> {
                   const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
               child: Container(
                 decoration: BoxDecoration(
-                  color: const Color(0xFF64B5F6), // Light blue background
+                  color: Theme.of(context).brightness == Brightness.dark
+                      ? const Color(
+                          0xFF1E1E1E) // Darker background for dark mode
+                      : const Color(
+                          0xFF64B5F6), // Light blue background for light mode
                   borderRadius: BorderRadius.circular(30),
+                  border: Theme.of(context).brightness == Brightness.dark
+                      ? Border.all(
+                          color: const Color(0xFF1E88E5).withAlpha(
+                              128), // 50% opacity blue border in dark mode
+                          width: 1)
+                      : null,
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
@@ -294,9 +320,20 @@ class _NearbyPulsesTabState extends State<NearbyPulsesTab> {
                           padding: const EdgeInsets.symmetric(vertical: 12),
                           decoration: BoxDecoration(
                             color: _showMapView
-                                ? Colors.white
+                                ? Theme.of(context).brightness ==
+                                        Brightness.dark
+                                    ? const Color(
+                                        0xFF212121) // Dark gray for dark mode
+                                    : Colors.white // White for light mode
                                 : Colors.transparent,
                             borderRadius: BorderRadius.circular(30),
+                            border: _showMapView &&
+                                    Theme.of(context).brightness ==
+                                        Brightness.dark
+                                ? Border.all(
+                                    color: const Color(0xFF1E88E5),
+                                    width: 1) // Blue border in dark mode
+                                : null,
                             boxShadow: _showMapView
                                 ? [
                                     BoxShadow(
@@ -314,7 +351,11 @@ class _NearbyPulsesTabState extends State<NearbyPulsesTab> {
                               color: _showMapView
                                   ? const Color(
                                       0xFF1E88E5) // Blue text when selected
-                                  : Colors.white, // White text when unselected
+                                  : Theme.of(context).brightness ==
+                                          Brightness.dark
+                                      ? Colors.white // White text in dark mode
+                                      : Colors
+                                          .white, // White text in light mode
                               fontWeight: FontWeight.bold,
                             ),
                           ),
@@ -332,9 +373,20 @@ class _NearbyPulsesTabState extends State<NearbyPulsesTab> {
                           padding: const EdgeInsets.symmetric(vertical: 12),
                           decoration: BoxDecoration(
                             color: !_showMapView
-                                ? Colors.white
+                                ? Theme.of(context).brightness ==
+                                        Brightness.dark
+                                    ? const Color(
+                                        0xFF212121) // Dark gray for dark mode
+                                    : Colors.white // White for light mode
                                 : Colors.transparent,
                             borderRadius: BorderRadius.circular(30),
+                            border: !_showMapView &&
+                                    Theme.of(context).brightness ==
+                                        Brightness.dark
+                                ? Border.all(
+                                    color: const Color(0xFF1E88E5),
+                                    width: 1) // Blue border in dark mode
+                                : null,
                             boxShadow: !_showMapView
                                 ? [
                                     BoxShadow(
@@ -352,7 +404,11 @@ class _NearbyPulsesTabState extends State<NearbyPulsesTab> {
                               color: !_showMapView
                                   ? const Color(
                                       0xFF1E88E5) // Blue text when selected
-                                  : Colors.white, // White text when unselected
+                                  : Theme.of(context).brightness ==
+                                          Brightness.dark
+                                      ? Colors.white // White text in dark mode
+                                      : Colors
+                                          .white, // White text in light mode
                               fontWeight: FontWeight.bold,
                             ),
                           ),
@@ -370,6 +426,7 @@ class _NearbyPulsesTabState extends State<NearbyPulsesTab> {
           ],
         ),
         floatingActionButton: FloatingActionButton(
+          heroTag: 'nearby_pulses_tab_fab',
           onPressed: () {
             Navigator.push(
               context,
