@@ -1,21 +1,25 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import 'package:pulsemeet/models/chat_message.dart';
+import 'package:pulsemeet/models/message.dart';
+import 'package:pulsemeet/models/encryption_key.dart';
 import 'package:pulsemeet/widgets/chat/message_content.dart';
 import 'package:pulsemeet/widgets/chat/message_reactions.dart';
 import 'package:pulsemeet/widgets/chat/message_status_indicator.dart';
+import 'package:pulsemeet/widgets/encryption_indicator.dart';
 
 /// A widget that displays a chat message bubble
 class MessageBubble extends StatelessWidget {
-  final ChatMessage message;
-  final ChatMessage? previousMessage;
-  final ChatMessage? nextMessage;
+  final Message message;
+  final Message? previousMessage;
+  final Message? nextMessage;
   final String currentUserId;
   final Function(String) onReactionTap;
-  final Function(ChatMessage) onMessageTap;
-  final Function(ChatMessage) onMessageLongPress;
-  final Function(ChatMessage)? onReplyTap;
-  final ChatMessage? replyToMessage;
+  final Function(Message) onMessageTap;
+  final Function(Message) onMessageLongPress;
+  final Function(Message)? onReplyTap;
+  final Message? replyToMessage;
+  final String? conversationId;
+  final ConversationType? conversationType;
 
   const MessageBubble({
     super.key,
@@ -28,6 +32,8 @@ class MessageBubble extends StatelessWidget {
     required this.onMessageLongPress,
     this.onReplyTap,
     this.replyToMessage,
+    this.conversationId,
+    this.conversationType,
   });
 
   @override
@@ -40,7 +46,7 @@ class MessageBubble extends StatelessWidget {
     debugPrint(
         'Message: "${message.content.substring(0, message.content.length > 20 ? 20 : message.content.length)}..." - isFromCurrentUser: $isFromCurrentUser');
 
-    final bool isSystemMessage = message.isSystemMessage;
+    final bool isSystemMessage = message.messageType == MessageType.system;
 
     // Format timestamp
     final String timeString = _formatTime(message.createdAt);
@@ -121,6 +127,8 @@ class MessageBubble extends StatelessWidget {
                       MessageContent(
                         message: message,
                         isFromCurrentUser: isFromCurrentUser,
+                        conversationId: conversationId,
+                        conversationType: conversationType,
                       ),
 
                       // Timestamp and status
@@ -144,6 +152,12 @@ class MessageBubble extends StatelessWidget {
                                     ? Colors.white.withAlpha(179) // 0.7 opacity
                                     : Colors.black54,
                               ),
+                            ),
+                            // Encryption badge
+                            MessageEncryptionBadge(
+                              isEncrypted: message.isEncrypted,
+                              isDecryptionFailed: message.content.contains(
+                                  '[Encrypted message - decryption failed]'),
                             ),
                             if (isFromCurrentUser)
                               Padding(
@@ -242,8 +256,7 @@ class MessageBubble extends StatelessWidget {
   }
 
   /// Build a reply indicator
-  Widget _buildReplyIndicator(
-      BuildContext context, ChatMessage replyToMessage) {
+  Widget _buildReplyIndicator(BuildContext context, Message replyToMessage) {
     final bool isFromCurrentUser = message.isFromCurrentUser(currentUserId);
 
     return GestureDetector(
@@ -322,19 +335,24 @@ class MessageBubble extends StatelessWidget {
   }
 
   /// Get a preview of the reply message content
-  String _getReplyPreview(ChatMessage message) {
-    if (message.isTextMessage) {
-      return message.content;
-    } else if (message.isImageMessage) {
-      return '📷 Photo';
-    } else if (message.isVideoMessage) {
-      return '🎥 Video';
-    } else if (message.isLocationMessage) {
-      return '📍 Location';
-    } else if (message.isLiveLocationMessage) {
-      return '📍 Live Location';
-    } else {
-      return 'Message';
+  String _getReplyPreview(Message message) {
+    switch (message.messageType) {
+      case MessageType.text:
+        return message.content;
+      case MessageType.image:
+        return '📷 Photo';
+      case MessageType.video:
+        return '🎥 Video';
+      case MessageType.audio:
+        return '🎵 Audio';
+      case MessageType.location:
+        return '📍 Location';
+      case MessageType.file:
+        return '📎 File';
+      case MessageType.call:
+        return '📞 Call';
+      default:
+        return 'Message';
     }
   }
 

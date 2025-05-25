@@ -87,7 +87,7 @@ class AuthScreen extends StatelessWidget {
                     // Show loading indicator
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(
-                        content: Text('Redirecting to Google Sign-In...'),
+                        content: Text('Opening Google Sign-In...'),
                         duration: Duration(seconds: 2),
                       ),
                     );
@@ -98,10 +98,26 @@ class AuthScreen extends StatelessWidget {
                     // in the app's main widget, which will navigate to the home screen when signed in
                   } catch (e) {
                     if (context.mounted) {
+                      // Provide user-friendly error messages
+                      String errorMessage = 'Sign-in failed. Please try again.';
+
+                      if (e.toString().contains('cancelled')) {
+                        errorMessage = 'Sign-in was cancelled.';
+                      } else if (e.toString().contains('ApiException: 10') ||
+                          e.toString().contains('DEVELOPER_ERROR')) {
+                        errorMessage =
+                            'Google Sign-In configuration error. Please contact support.';
+                      } else if (e.toString().contains('network') ||
+                          e.toString().contains('connection')) {
+                        errorMessage =
+                            'Network error. Please check your connection and try again.';
+                      }
+
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(
-                          content: Text('Error: ${e.toString()}'),
+                          content: Text(errorMessage),
                           backgroundColor: Colors.red,
+                          duration: const Duration(seconds: 4),
                         ),
                       );
                     }

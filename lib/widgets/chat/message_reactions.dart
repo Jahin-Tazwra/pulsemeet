@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:pulsemeet/models/chat_message.dart';
+import 'package:pulsemeet/models/message.dart';
 
 /// A widget that displays reactions to a message
 class MessageReactions extends StatelessWidget {
@@ -19,9 +19,10 @@ class MessageReactions extends StatelessWidget {
     // Group reactions by emoji
     final Map<String, int> reactionCounts = {};
     for (final reaction in reactions) {
-      reactionCounts[reaction.emoji] = (reactionCounts[reaction.emoji] ?? 0) + 1;
+      reactionCounts[reaction.emoji] =
+          (reactionCounts[reaction.emoji] ?? 0) + 1;
     }
-    
+
     return GestureDetector(
       onTap: onReactionTap,
       child: Container(
@@ -41,8 +42,8 @@ class MessageReactions extends StatelessWidget {
           ],
         ),
         child: Wrap(
-          alignment: alignment == Alignment.centerRight 
-              ? WrapAlignment.end 
+          alignment: alignment == Alignment.centerRight
+              ? WrapAlignment.end
               : WrapAlignment.start,
           spacing: 4.0,
           children: reactionCounts.entries.map((entry) {
@@ -52,7 +53,7 @@ class MessageReactions extends StatelessWidget {
       ),
     );
   }
-  
+
   /// Build a reaction chip
   Widget _buildReactionChip(BuildContext context, String emoji, int count) {
     return Container(

@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
-import 'package:pulsemeet/models/chat_message.dart';
+import 'package:pulsemeet/models/message.dart';
 import 'package:pulsemeet/services/media_service.dart';
 import 'package:pulsemeet/services/location_service.dart';
 import 'package:pulsemeet/services/audio_service.dart';
@@ -20,7 +20,7 @@ class MessageInput extends StatefulWidget {
   final Function(String?) onSendLocation;
   final Function(String?, Duration) onSendLiveLocation;
   final Function() onCancelReply;
-  final ChatMessage? replyToMessage;
+  final Message? replyToMessage;
 
   const MessageInput({
     super.key,
@@ -412,21 +412,24 @@ class _MessageInputState extends State<MessageInput> {
   }
 
   /// Get a preview of the reply message content
-  String _getReplyPreview(ChatMessage message) {
-    if (message.isTextMessage) {
-      return message.content;
-    } else if (message.isImageMessage) {
-      return '📷 Photo';
-    } else if (message.isVideoMessage) {
-      return '🎥 Video';
-    } else if (message.isAudioMessage) {
-      return '🎵 Voice Message';
-    } else if (message.isLocationMessage) {
-      return '📍 Location';
-    } else if (message.isLiveLocationMessage) {
-      return '📍 Live Location';
-    } else {
-      return 'Message';
+  String _getReplyPreview(Message message) {
+    switch (message.messageType) {
+      case MessageType.text:
+        return message.content;
+      case MessageType.image:
+        return '📷 Photo';
+      case MessageType.video:
+        return '🎥 Video';
+      case MessageType.audio:
+        return '🎵 Voice Message';
+      case MessageType.location:
+        return '📍 Location';
+      case MessageType.file:
+        return '📎 File';
+      case MessageType.call:
+        return '📞 Call';
+      default:
+        return 'Message';
     }
   }
 

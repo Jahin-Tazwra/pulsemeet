@@ -9,35 +9,48 @@ class ConnectionRequestsScreen extends StatefulWidget {
   const ConnectionRequestsScreen({super.key});
 
   @override
-  State<ConnectionRequestsScreen> createState() => _ConnectionRequestsScreenState();
+  State<ConnectionRequestsScreen> createState() =>
+      _ConnectionRequestsScreenState();
 }
 
-class _ConnectionRequestsScreenState extends State<ConnectionRequestsScreen> {
+class _ConnectionRequestsScreenState extends State<ConnectionRequestsScreen>
+    with SingleTickerProviderStateMixin {
   final _connectionService = ConnectionService();
-  
+
   bool _isLoading = true;
   List<Connection> _pendingRequests = [];
+  List<Connection> _outgoingRequests = [];
   String _errorMessage = '';
-  
+  late TabController _tabController;
+
   @override
   void initState() {
     super.initState();
-    _fetchPendingRequests();
+    _tabController = TabController(length: 2, vsync: this);
+    _fetchAllRequests();
   }
-  
-  /// Fetch pending connection requests
-  Future<void> _fetchPendingRequests() async {
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
+  }
+
+  /// Fetch all connection requests (incoming and outgoing)
+  Future<void> _fetchAllRequests() async {
     setState(() {
       _isLoading = true;
       _errorMessage = '';
     });
-    
+
     try {
-      final requests = await _connectionService.fetchPendingRequests();
-      
+      final pendingRequests = await _connectionService.fetchPendingRequests();
+      final outgoingRequests = await _connectionService.fetchOutgoingRequests();
+
       if (mounted) {
         setState(() {
-          _pendingRequests = requests;
+          _pendingRequests = pendingRequests;
+          _outgoingRequests = outgoingRequests;
           _isLoading = false;
         });
       }
@@ -50,20 +63,36 @@ class _ConnectionRequestsScreenState extends State<ConnectionRequestsScreen> {
       }
     }
   }
-  
+
+  /// Fetch pending connection requests
+  Future<void> _fetchPendingRequests() async {
+    try {
+      final requests = await _connectionService.fetchPendingRequests();
+
+      if (mounted) {
+        setState(() {
+          _pendingRequests = requests;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error fetching pending requests: $e');
+    }
+  }
+
   /// Accept a connection request
   Future<void> _acceptRequest(Connection request) async {
     try {
       await _connectionService.acceptConnectionRequest(request.id);
-      
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Connection request from ${request.requesterProfile?.displayName ?? request.requesterProfile?.username ?? 'User'} accepted'),
+            content: Text(
+                'Connection request from ${request.requesterProfile?.displayName ?? request.requesterProfile?.username ?? 'User'} accepted'),
             duration: const Duration(seconds: 2),
           ),
         );
-        
+
         // Refresh the list
         _fetchPendingRequests();
       }
@@ -71,27 +100,29 @@ class _ConnectionRequestsScreenState extends State<ConnectionRequestsScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error accepting connection request: ${e.toString()}'),
+            content:
+                Text('Error accepting connection request: ${e.toString()}'),
             duration: const Duration(seconds: 2),
           ),
         );
       }
     }
   }
-  
+
   /// Decline a connection request
   Future<void> _declineRequest(Connection request) async {
     try {
       await _connectionService.declineConnectionRequest(request.id);
-      
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Connection request from ${request.requesterProfile?.displayName ?? request.requesterProfile?.username ?? 'User'} declined'),
+            content: Text(
+                'Connection request from ${request.requesterProfile?.displayName ?? request.requesterProfile?.username ?? 'User'} declined'),
             duration: const Duration(seconds: 2),
           ),
         );
-        
+
         // Refresh the list
         _fetchPendingRequests();
       }
@@ -99,14 +130,45 @@ class _ConnectionRequestsScreenState extends State<ConnectionRequestsScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error declining connection request: ${e.toString()}'),
+            content:
+                Text('Error declining connection request: ${e.toString()}'),
             duration: const Duration(seconds: 2),
           ),
         );
       }
     }
   }
-  
+
+  /// Cancel an outgoing connection request
+  Future<void> _cancelRequest(Connection request) async {
+    try {
+      await _connectionService.cancelConnectionRequest(request.id);
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+                'Connection request to ${request.receiverProfile?.displayName ?? request.receiverProfile?.username ?? 'User'} cancelled'),
+            duration: const Duration(seconds: 2),
+          ),
+        );
+
+        // Refresh the list
+        _fetchAllRequests();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content:
+                Text('Error cancelling connection request: ${e.toString()}'),
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -115,22 +177,35 @@ class _ConnectionRequestsScreenState extends State<ConnectionRequestsScreen> {
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
-            onPressed: _fetchPendingRequests,
+            onPressed: _fetchAllRequests,
             tooltip: 'Refresh',
           ),
         ],
+        bottom: TabBar(
+          controller: _tabController,
+          tabs: const [
+            Tab(text: 'Incoming', icon: Icon(Icons.call_received)),
+            Tab(text: 'Outgoing', icon: Icon(Icons.call_made)),
+          ],
+        ),
       ),
-      body: _buildBody(),
+      body: TabBarView(
+        controller: _tabController,
+        children: [
+          _buildIncomingRequestsTab(),
+          _buildOutgoingRequestsTab(),
+        ],
+      ),
     );
   }
-  
-  Widget _buildBody() {
+
+  Widget _buildIncomingRequestsTab() {
     if (_isLoading) {
       return const Center(
         child: CircularProgressIndicator(),
       );
     }
-    
+
     if (_errorMessage.isNotEmpty) {
       return Center(
         child: Column(
@@ -143,27 +218,27 @@ class _ConnectionRequestsScreenState extends State<ConnectionRequestsScreen> {
             ),
             const SizedBox(height: 16.0),
             ElevatedButton(
-              onPressed: _fetchPendingRequests,
+              onPressed: _fetchAllRequests,
               child: const Text('Retry'),
             ),
           ],
         ),
       );
     }
-    
+
     if (_pendingRequests.isEmpty) {
       return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             const Icon(
-              Icons.people_outline,
+              Icons.call_received,
               size: 64.0,
               color: Colors.grey,
             ),
             const SizedBox(height: 16.0),
             const Text(
-              'No pending connection requests',
+              'No incoming connection requests',
               style: TextStyle(fontSize: 18.0),
               textAlign: TextAlign.center,
             ),
@@ -173,31 +248,26 @@ class _ConnectionRequestsScreenState extends State<ConnectionRequestsScreen> {
               textAlign: TextAlign.center,
               style: TextStyle(color: Colors.grey),
             ),
-            const SizedBox(height: 16.0),
-            ElevatedButton(
-              onPressed: _fetchPendingRequests,
-              child: const Text('Refresh'),
-            ),
           ],
         ),
       );
     }
-    
+
     return RefreshIndicator(
-      onRefresh: _fetchPendingRequests,
+      onRefresh: _fetchAllRequests,
       child: ListView.builder(
         itemCount: _pendingRequests.length,
         itemBuilder: (context, index) {
           final request = _pendingRequests[index];
           final requester = request.requesterProfile;
-          
+
           if (requester == null) {
             return const SizedBox.shrink();
           }
-          
+
           return ProfileListItem(
             profile: requester,
-            subtitle: Text('Sent a connection request'),
+            subtitle: const Text('Sent a connection request'),
             onTap: () {
               Navigator.push(
                 context,
@@ -220,6 +290,94 @@ class _ConnectionRequestsScreenState extends State<ConnectionRequestsScreen> {
                   tooltip: 'Decline',
                 ),
               ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildOutgoingRequestsTab() {
+    if (_isLoading) {
+      return const Center(
+        child: CircularProgressIndicator(),
+      );
+    }
+
+    if (_errorMessage.isNotEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text(
+              _errorMessage,
+              style: const TextStyle(color: Colors.red),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 16.0),
+            ElevatedButton(
+              onPressed: _fetchAllRequests,
+              child: const Text('Retry'),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (_outgoingRequests.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(
+              Icons.call_made,
+              size: 64.0,
+              color: Colors.grey,
+            ),
+            const SizedBox(height: 16.0),
+            const Text(
+              'No outgoing connection requests',
+              style: TextStyle(fontSize: 18.0),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 8.0),
+            const Text(
+              'Connection requests you send will appear here',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Colors.grey),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return RefreshIndicator(
+      onRefresh: _fetchAllRequests,
+      child: ListView.builder(
+        itemCount: _outgoingRequests.length,
+        itemBuilder: (context, index) {
+          final request = _outgoingRequests[index];
+          final receiver = request.receiverProfile;
+
+          if (receiver == null) {
+            return const SizedBox.shrink();
+          }
+
+          return ProfileListItem(
+            profile: receiver,
+            subtitle: const Text('Connection request sent'),
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => UserProfileScreen(userId: receiver.id),
+                ),
+              );
+            },
+            trailing: IconButton(
+              icon: const Icon(Icons.cancel, color: Colors.red),
+              onPressed: () => _cancelRequest(request),
+              tooltip: 'Cancel Request',
             ),
           );
         },

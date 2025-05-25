@@ -26,11 +26,14 @@ class ConnectionService {
   final _connectionsController = StreamController<List<Connection>>.broadcast();
   final _pendingRequestsController =
       StreamController<List<Connection>>.broadcast();
+  final _outgoingRequestsController =
+      StreamController<List<Connection>>.broadcast();
   final _connectionStatusController = StreamController<Connection>.broadcast();
 
   // Cached data
   List<Connection> _connections = [];
   List<Connection> _pendingRequests = [];
+  List<Connection> _outgoingRequests = [];
 
   // Subscription and channel
   StreamSubscription? _connectionSubscription;
@@ -44,6 +47,10 @@ class ConnectionService {
   Stream<List<Connection>> get pendingRequestsStream =>
       _pendingRequestsController.stream;
 
+  /// Stream of outgoing connection requests
+  Stream<List<Connection>> get outgoingRequestsStream =>
+      _outgoingRequestsController.stream;
+
   /// Stream of connection status changes
   Stream<Connection> get connectionStatusStream =>
       _connectionStatusController.stream;
@@ -54,6 +61,9 @@ class ConnectionService {
   /// Get the current list of pending requests
   List<Connection> get pendingRequests => _pendingRequests;
 
+  /// Get the current list of outgoing requests
+  List<Connection> get outgoingRequests => _outgoingRequests;
+
   /// Get the current user ID
   String? get currentUserId => _supabase.auth.currentUser?.id;
 
@@ -62,6 +72,7 @@ class ConnectionService {
     // Add initial empty data
     _connectionsController.add([]);
     _pendingRequestsController.add([]);
+    _outgoingRequestsController.add([]);
 
     // Subscribe to connection changes
     _subscribeToConnections();
@@ -84,12 +95,40 @@ class ConnectionService {
         event: '*',
         schema: 'public',
         table: 'connections',
-        filter: 'requester_id=eq.$userId,receiver_id=eq.$userId',
+        filter: 'requester_id=eq.$userId',
       ),
       (payload, [ref]) {
+        debugPrint(
+            'Connection change detected for requester: ${payload['eventType']}');
         // Refresh connections on any change
         fetchConnections();
         fetchPendingRequests();
+        fetchOutgoingRequests();
+
+        // If this is an update, notify about the status change
+        if (payload['eventType'] == 'UPDATE' && payload['new'] != null) {
+          final connection = Connection.fromJson(payload['new']);
+          _connectionStatusController.add(connection);
+        }
+      },
+    );
+
+    // Also listen for changes where current user is the receiver
+    channel.on(
+      RealtimeListenTypes.postgresChanges,
+      ChannelFilter(
+        event: '*',
+        schema: 'public',
+        table: 'connections',
+        filter: 'receiver_id=eq.$userId',
+      ),
+      (payload, [ref]) {
+        debugPrint(
+            'Connection change detected for receiver: ${payload['eventType']}');
+        // Refresh connections on any change
+        fetchConnections();
+        fetchPendingRequests();
+        fetchOutgoingRequests();
 
         // If this is an update, notify about the status change
         if (payload['eventType'] == 'UPDATE' && payload['new'] != null) {
@@ -165,6 +204,7 @@ class ConnectionService {
 
       // Refresh connections
       await fetchPendingRequests();
+      await fetchOutgoingRequests();
 
       // Send notification to receiver
       _notificationService.sendConnectionRequestNotification(receiverId);
@@ -237,6 +277,29 @@ class ConnectionService {
       return connection;
     } catch (e) {
       debugPrint('Error declining connection request: $e');
+      rethrow;
+    }
+  }
+
+  /// Cancel an outgoing connection request
+  Future<void> cancelConnectionRequest(String connectionId) async {
+    final userId = _supabase.auth.currentUser?.id;
+    if (userId == null) return;
+
+    try {
+      // Delete the connection request
+      await _supabase
+          .from('connections')
+          .delete()
+          .eq('id', connectionId)
+          .eq('requester_id',
+              userId) // Ensure the current user is the requester
+          .eq('status', 'pending'); // Only allow canceling pending requests
+
+      // Refresh connections
+      await fetchOutgoingRequests();
+    } catch (e) {
+      debugPrint('Error canceling connection request: $e');
       rethrow;
     }
   }
@@ -324,8 +387,8 @@ class ConnectionService {
           .from('connections')
           .select('''
           *,
-          requester_profile:requester_id(id, username, display_name, avatar_url, created_at, updated_at, last_seen_at),
-          receiver_profile:receiver_id(id, username, display_name, avatar_url, created_at, updated_at, last_seen_at)
+          requester_profile:profiles!fk_connections_requester_profile(id, username, display_name, avatar_url, created_at, updated_at, last_seen_at),
+          receiver_profile:profiles!fk_connections_receiver_profile(id, username, display_name, avatar_url, created_at, updated_at, last_seen_at)
         ''')
           .or('requester_id.eq.$userId,receiver_id.eq.$userId')
           .eq('status', 'accepted');
@@ -350,8 +413,8 @@ class ConnectionService {
     try {
       final response = await _supabase.from('connections').select('''
           *,
-          requester_profile:requester_id(id, username, display_name, avatar_url, created_at, updated_at, last_seen_at),
-          receiver_profile:receiver_id(id, username, display_name, avatar_url, created_at, updated_at, last_seen_at)
+          requester_profile:profiles!fk_connections_requester_profile(id, username, display_name, avatar_url, created_at, updated_at, last_seen_at),
+          receiver_profile:profiles!fk_connections_receiver_profile(id, username, display_name, avatar_url, created_at, updated_at, last_seen_at)
         ''').eq('receiver_id', userId).eq('status', 'pending');
 
       _pendingRequests = response
@@ -362,6 +425,30 @@ class ConnectionService {
       return _pendingRequests;
     } catch (e) {
       debugPrint('Error fetching pending requests: $e');
+      return [];
+    }
+  }
+
+  /// Fetch outgoing connection requests
+  Future<List<Connection>> fetchOutgoingRequests() async {
+    final userId = _supabase.auth.currentUser?.id;
+    if (userId == null) return [];
+
+    try {
+      final response = await _supabase.from('connections').select('''
+          *,
+          requester_profile:profiles!fk_connections_requester_profile(id, username, display_name, avatar_url, created_at, updated_at, last_seen_at),
+          receiver_profile:profiles!fk_connections_receiver_profile(id, username, display_name, avatar_url, created_at, updated_at, last_seen_at)
+        ''').eq('requester_id', userId).eq('status', 'pending');
+
+      _outgoingRequests = response
+          .map<Connection>((json) => Connection.fromJson(json))
+          .toList();
+      _outgoingRequestsController.add(_outgoingRequests);
+
+      return _outgoingRequests;
+    } catch (e) {
+      debugPrint('Error fetching outgoing requests: $e');
       return [];
     }
   }
@@ -411,6 +498,7 @@ class ConnectionService {
   void dispose() {
     _connectionsController.close();
     _pendingRequestsController.close();
+    _outgoingRequestsController.close();
     _connectionStatusController.close();
     _connectionChannel?.unsubscribe();
   }

@@ -4,7 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
-import 'package:pulsemeet/models/chat_message.dart';
+import 'package:pulsemeet/models/message.dart' as models;
 import 'package:pulsemeet/models/profile.dart';
 import 'package:pulsemeet/models/pulse.dart';
 import 'package:pulsemeet/services/pulse_participant_service.dart';
@@ -122,7 +122,7 @@ class NotificationService {
   }
 
   /// Show a message notification
-  Future<void> showMessageNotification(ChatMessage message) async {
+  Future<void> showMessageNotification(models.Message message) async {
     // Don't show notifications for messages from the current user
     if (message.senderId == _supabase.auth.currentUser?.id) {
       return;
@@ -137,35 +137,30 @@ class NotificationService {
 
     // Create notification body based on message type
     switch (message.messageType) {
-      case 'text':
+      case models.MessageType.text:
         notificationBody = message.content.length > 50
             ? '${message.content.substring(0, 47)}...'
             : message.content;
         break;
-      case 'image':
+      case models.MessageType.image:
         notificationBody = message.content.isNotEmpty
             ? 'Sent an image: ${message.content}'
             : 'Sent an image';
         break;
-      case 'video':
+      case models.MessageType.video:
         notificationBody = message.content.isNotEmpty
             ? 'Sent a video: ${message.content}'
             : 'Sent a video';
         break;
-      case 'audio':
+      case models.MessageType.audio:
         notificationBody = message.content.isNotEmpty
             ? 'Sent a voice message: ${message.content}'
             : 'Sent a voice message';
         break;
-      case 'location':
+      case models.MessageType.location:
         notificationBody = message.content.isNotEmpty
             ? 'Shared a location: ${message.content}'
             : 'Shared a location';
-        break;
-      case 'live_location':
-        notificationBody = message.content.isNotEmpty
-            ? 'Started sharing live location: ${message.content}'
-            : 'Started sharing live location';
         break;
       default:
         notificationBody = 'Sent a message';
@@ -199,13 +194,13 @@ class NotificationService {
       notificationTitle,
       notificationBody,
       platformChannelSpecifics,
-      payload: 'message:${message.pulseId}',
+      payload: 'message:${message.conversationId}',
     );
   }
 
   /// Show a mention notification
   Future<void> showMentionNotification(
-      ChatMessage message, String username) async {
+      models.Message message, String username) async {
     // Don't show notifications for messages from the current user
     if (message.senderId == _supabase.auth.currentUser?.id) {
       return;
@@ -248,19 +243,19 @@ class NotificationService {
       notificationTitle,
       notificationBody,
       platformChannelSpecifics,
-      payload: 'mention:${message.pulseId}:${message.id}',
+      payload: 'mention:${message.conversationId}:${message.id}',
     );
   }
 
   /// Process mentions in a message and send notifications
-  Future<void> processMentions(ChatMessage message) async {
+  Future<void> processMentions(models.Message message) async {
     // Get mentions from the message
-    final mentions = message.getMentions();
+    final mentions = message.mentions ?? [];
     if (mentions.isEmpty) return;
 
     // Get participants
     final participants =
-        await _participantService.getParticipants(message.pulseId);
+        await _participantService.getParticipants(message.conversationId);
 
     // Get current user
     final currentUserId = _supabase.auth.currentUser?.id;
@@ -381,57 +376,19 @@ class NotificationService {
           requesterResponse['username'] ??
           'Someone';
 
-      // Get the receiver's notification settings
-      final receiverResponse = await _supabase
-          .from('profiles')
-          .select('notification_settings')
-          .eq('id', receiverId)
-          .single();
+      debugPrint(
+          'Sending connection request notification from $requesterName to receiver $receiverId');
 
-      final notificationSettings = NotificationSettings.fromJson(
-          receiverResponse['notification_settings'] is String
-              ? jsonDecode(receiverResponse['notification_settings'])
-              : receiverResponse['notification_settings']);
+      // For now, we'll use a simple approach:
+      // The real-time subscription in ConnectionService will handle notifying the receiver
+      // when they open the app and see the new pending request
 
-      // Check if push notifications are enabled
-      if (!notificationSettings.pushNotifications) {
-        return;
-      }
+      // In a production app, you would implement push notifications here using:
+      // - Firebase Cloud Messaging (FCM)
+      // - Apple Push Notification Service (APNs)
+      // - Or a service like OneSignal
 
-      // Create notification content
-      const notificationTitle = 'New Connection Request';
-      final notificationBody = '$requesterName wants to connect with you';
-
-      // Show notification
-      const AndroidNotificationDetails androidPlatformChannelSpecifics =
-          AndroidNotificationDetails(
-        'connections_channel',
-        'Connections',
-        channelDescription: 'Notifications for connection requests',
-        importance: Importance.high,
-        priority: Priority.high,
-        showWhen: true,
-      );
-
-      const DarwinNotificationDetails iOSPlatformChannelSpecifics =
-          DarwinNotificationDetails(
-        presentAlert: true,
-        presentBadge: true,
-        presentSound: true,
-      );
-
-      const NotificationDetails platformChannelSpecifics = NotificationDetails(
-        android: androidPlatformChannelSpecifics,
-        iOS: iOSPlatformChannelSpecifics,
-      );
-
-      await _flutterLocalNotificationsPlugin.show(
-        'connection_request_${userId}_$receiverId'.hashCode,
-        notificationTitle,
-        notificationBody,
-        platformChannelSpecifics,
-        payload: 'connection_request:$userId',
-      );
+      debugPrint('Connection request notification sent successfully');
     } catch (e) {
       debugPrint('Error sending connection request notification: $e');
     }

@@ -52,6 +52,7 @@ class DatabaseInitializationService {
       await _ensureConnectionsTables();
       await _ensureRatingsTable(); // Add ratings table initialization
       await _ensurePulseSharingTable(); // Add pulse sharing features
+      await _ensurePulseChatKeysTable(); // Add pulse chat encryption keys
 
       // Check and configure storage buckets
       await _ensureStorageBuckets();
@@ -813,6 +814,105 @@ class DatabaseInitializationService {
       debugPrint('Successfully created pulse_shares table and related objects');
     } catch (e) {
       debugPrint('Error ensuring pulse_shares table: $e');
+      // Continue with initialization even if this part fails
+    }
+  }
+
+  /// Ensure pulse chat keys table exists for end-to-end encryption
+  Future<void> _ensurePulseChatKeysTable() async {
+    try {
+      // Check if the pulse_chat_keys table exists by attempting to query it
+      try {
+        await _supabase.from('pulse_chat_keys').select('id').limit(1);
+        debugPrint('pulse_chat_keys table already exists');
+        return;
+      } catch (e) {
+        // Table doesn't exist, create it
+        debugPrint('Creating pulse_chat_keys table...');
+      }
+
+      // Create the table and related objects
+      await _executeSql('''
+      -- Create pulse_chat_keys table if it doesn't exist
+      CREATE TABLE IF NOT EXISTS pulse_chat_keys (
+        id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+        pulse_id UUID NOT NULL REFERENCES pulses(id) ON DELETE CASCADE,
+        key_id VARCHAR(255) NOT NULL UNIQUE,
+        symmetric_key TEXT NOT NULL,
+        created_by UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+        created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+        expires_at TIMESTAMP WITH TIME ZONE,
+        version INTEGER DEFAULT 1,
+        is_active BOOLEAN DEFAULT true,
+        UNIQUE(pulse_id, version)
+      );
+
+      -- Add comment to table
+      COMMENT ON TABLE pulse_chat_keys IS 'Stores shared encryption keys for pulse chats';
+
+      -- Add indexes for performance
+      CREATE INDEX IF NOT EXISTS idx_pulse_chat_keys_pulse_id ON pulse_chat_keys(pulse_id);
+      CREATE INDEX IF NOT EXISTS idx_pulse_chat_keys_key_id ON pulse_chat_keys(key_id);
+      CREATE INDEX IF NOT EXISTS idx_pulse_chat_keys_created_by ON pulse_chat_keys(created_by);
+      CREATE INDEX IF NOT EXISTS idx_pulse_chat_keys_is_active ON pulse_chat_keys(is_active);
+      ''');
+
+      // Add RLS policies
+      await _executeSql('''
+      -- Enable RLS on the table
+      ALTER TABLE pulse_chat_keys ENABLE ROW LEVEL SECURITY;
+
+      -- Policy to allow pulse participants to view chat keys
+      DROP POLICY IF EXISTS "Pulse participants can view chat keys" ON pulse_chat_keys;
+      CREATE POLICY "Pulse participants can view chat keys"
+      ON pulse_chat_keys FOR SELECT
+      TO authenticated
+      USING (
+        EXISTS (
+          SELECT 1 FROM pulse_participants
+          WHERE pulse_participants.pulse_id = pulse_chat_keys.pulse_id
+          AND pulse_participants.user_id = auth.uid()
+          AND pulse_participants.status = 'active'
+        ) OR
+        EXISTS (
+          SELECT 1 FROM pulses
+          WHERE pulses.id = pulse_chat_keys.pulse_id
+          AND pulses.creator_id = auth.uid()
+        )
+      );
+
+      -- Policy to allow pulse creators to create chat keys
+      DROP POLICY IF EXISTS "Pulse creators can create chat keys" ON pulse_chat_keys;
+      CREATE POLICY "Pulse creators can create chat keys"
+      ON pulse_chat_keys FOR INSERT
+      TO authenticated
+      WITH CHECK (
+        EXISTS (
+          SELECT 1 FROM pulses
+          WHERE pulses.id = pulse_id
+          AND pulses.creator_id = auth.uid()
+        ) OR
+        EXISTS (
+          SELECT 1 FROM pulse_participants
+          WHERE pulse_participants.pulse_id = pulse_chat_keys.pulse_id
+          AND pulse_participants.user_id = auth.uid()
+          AND pulse_participants.status = 'active'
+        )
+      );
+
+      -- Policy to allow key creators to update their keys
+      DROP POLICY IF EXISTS "Key creators can update chat keys" ON pulse_chat_keys;
+      CREATE POLICY "Key creators can update chat keys"
+      ON pulse_chat_keys FOR UPDATE
+      TO authenticated
+      USING (created_by = auth.uid())
+      WITH CHECK (created_by = auth.uid());
+      ''');
+
+      debugPrint(
+          'Successfully created pulse_chat_keys table and related objects');
+    } catch (e) {
+      debugPrint('Error ensuring pulse_chat_keys table: $e');
       // Continue with initialization even if this part fails
     }
   }

@@ -40,6 +40,7 @@ class _MentionTextInputState extends State<MentionTextInput> {
   String _mentionQuery = '';
   Timer? _typingTimer;
   bool _isTyping = false;
+  DateTime? _lastTypingUpdate;
 
   @override
   void initState() {
@@ -78,28 +79,39 @@ class _MentionTextInputState extends State<MentionTextInput> {
     });
   }
 
-  /// Update typing status with debounce
+  /// Update typing status with improved debounce
   void _updateTypingStatus(bool isComposing) {
     // Cancel existing timer
     _typingTimer?.cancel();
 
-    // Set typing status if changed
-    if (isComposing != _isTyping) {
+    // Only update if status actually changed and enough time has passed
+    final now = DateTime.now();
+    final timeSinceLastUpdate = _lastTypingUpdate != null
+        ? now.difference(_lastTypingUpdate!).inMilliseconds
+        : 1000;
+
+    // Debounce typing updates to reduce database calls
+    if (isComposing != _isTyping && timeSinceLastUpdate > 500) {
       _isTyping = isComposing;
+      _lastTypingUpdate = now;
+
       final userId = Supabase.instance.client.auth.currentUser?.id;
       if (userId != null) {
+        debugPrint('⌨️ Updating typing status: $isComposing for user: $userId');
         _participantService.setTypingStatus(
             widget.pulseId, userId, isComposing);
       }
     }
 
-    // If still typing, set a timer to clear typing status after 5 seconds of inactivity
+    // If still typing, set a timer to clear typing status after 3 seconds of inactivity
     if (isComposing) {
-      _typingTimer = Timer(const Duration(seconds: 5), () {
+      _typingTimer = Timer(const Duration(seconds: 3), () {
         if (_isTyping) {
           _isTyping = false;
+          _lastTypingUpdate = DateTime.now();
           final userId = Supabase.instance.client.auth.currentUser?.id;
           if (userId != null) {
+            debugPrint('⌨️ Clearing typing status for user: $userId');
             _participantService.setTypingStatus(widget.pulseId, userId, false);
           }
         }

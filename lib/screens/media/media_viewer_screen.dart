@@ -1,15 +1,22 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:video_player/video_player.dart';
-import 'package:pulsemeet/models/chat_message.dart';
+import 'package:pulsemeet/models/message.dart';
+import 'package:pulsemeet/services/media_service.dart';
+import 'package:pulsemeet/models/encryption_key.dart';
 
 /// A screen for viewing media (images and videos)
 class MediaViewerScreen extends StatefulWidget {
   final MediaData mediaData;
+  final String? conversationId;
+  final ConversationType? conversationType;
 
   const MediaViewerScreen({
     super.key,
     required this.mediaData,
+    this.conversationId,
+    this.conversationType,
   });
 
   @override
@@ -20,15 +27,16 @@ class _MediaViewerScreenState extends State<MediaViewerScreen> {
   VideoPlayerController? _videoController;
   bool _isPlaying = false;
   bool _isInitialized = false;
+  final MediaService _mediaService = MediaService();
+  String? _decryptedUrl;
+  bool _isDecrypting = false;
 
   @override
   void initState() {
     super.initState();
 
-    // Initialize video player if this is a video
-    if (widget.mediaData.isVideo) {
-      _initializeVideoPlayer();
-    }
+    // Initialize media (decrypt if needed, then initialize video player)
+    _initializeMedia();
   }
 
   @override
@@ -37,11 +45,51 @@ class _MediaViewerScreenState extends State<MediaViewerScreen> {
     super.dispose();
   }
 
+  /// Initialize media (decrypt if needed, then initialize video player)
+  Future<void> _initializeMedia() async {
+    setState(() {
+      _isDecrypting = true;
+    });
+
+    try {
+      // Get decrypted URL if this is encrypted media
+      if (widget.conversationId != null && widget.conversationType != null) {
+        _decryptedUrl = await _mediaService.getDecryptedMediaUrl(
+          widget.mediaData,
+          widget.conversationId!,
+          widget.conversationType!,
+        );
+      } else {
+        _decryptedUrl = widget.mediaData.url;
+      }
+
+      // Initialize video player if this is a video
+      if (widget.mediaData.isVideo && _decryptedUrl != null) {
+        await _initializeVideoPlayer();
+      }
+    } catch (e) {
+      debugPrint('Error initializing media: $e');
+      _decryptedUrl = widget.mediaData.url; // Fallback to original URL
+    } finally {
+      setState(() {
+        _isDecrypting = false;
+      });
+    }
+  }
+
   /// Initialize the video player
   Future<void> _initializeVideoPlayer() async {
-    _videoController = VideoPlayerController.networkUrl(
-      Uri.parse(widget.mediaData.url),
-    );
+    if (_decryptedUrl == null) return;
+
+    // Handle local file URLs
+    if (_decryptedUrl!.startsWith('file://')) {
+      final localPath = _decryptedUrl!.replaceFirst('file://', '');
+      _videoController = VideoPlayerController.file(File(localPath));
+    } else {
+      _videoController = VideoPlayerController.networkUrl(
+        Uri.parse(_decryptedUrl!),
+      );
+    }
 
     await _videoController!.initialize();
 
@@ -91,28 +139,57 @@ class _MediaViewerScreenState extends State<MediaViewerScreen> {
 
   /// Build the image viewer
   Widget _buildImageViewer() {
+    if (_isDecrypting) {
+      return const Center(
+        child: CircularProgressIndicator(),
+      );
+    }
+
+    if (_decryptedUrl == null) {
+      return const Center(
+        child: Icon(
+          Icons.error,
+          color: Colors.white,
+          size: 48.0,
+        ),
+      );
+    }
+
     return InteractiveViewer(
       minScale: 0.5,
       maxScale: 3.0,
-      child: CachedNetworkImage(
-        imageUrl: widget.mediaData.url,
-        placeholder: (context, url) => const Center(
-          child: CircularProgressIndicator(),
-        ),
-        errorWidget: (context, url, error) => const Center(
-          child: Icon(
-            Icons.error,
-            color: Colors.white,
-            size: 48.0,
-          ),
-        ),
-      ),
+      child: _decryptedUrl!.startsWith('file://')
+          ? Image.file(
+              File(_decryptedUrl!.replaceFirst('file://', '')),
+              fit: BoxFit.contain,
+              errorBuilder: (context, error, stackTrace) => const Center(
+                child: Icon(
+                  Icons.error,
+                  color: Colors.white,
+                  size: 48.0,
+                ),
+              ),
+            )
+          : CachedNetworkImage(
+              imageUrl: _decryptedUrl!,
+              fit: BoxFit.contain,
+              placeholder: (context, url) => const Center(
+                child: CircularProgressIndicator(),
+              ),
+              errorWidget: (context, url, error) => const Center(
+                child: Icon(
+                  Icons.error,
+                  color: Colors.white,
+                  size: 48.0,
+                ),
+              ),
+            ),
     );
   }
 
   /// Build the video viewer
   Widget _buildVideoViewer() {
-    if (!_isInitialized || _videoController == null) {
+    if (_isDecrypting || !_isInitialized || _videoController == null) {
       return const Center(
         child: CircularProgressIndicator(),
       );

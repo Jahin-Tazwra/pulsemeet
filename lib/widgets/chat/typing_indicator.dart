@@ -1,14 +1,16 @@
 import 'package:flutter/material.dart';
-import 'package:pulsemeet/models/profile.dart';
+import 'package:pulsemeet/models/conversation.dart';
 
 /// A widget that displays a typing indicator
 class TypingIndicator extends StatefulWidget {
-  final List<Profile> typingUsers;
+  final List<String> typingUsers;
+  final Conversation conversation;
   final Color? color;
 
   const TypingIndicator({
     super.key,
     required this.typingUsers,
+    required this.conversation,
     this.color,
   });
 
@@ -58,21 +60,17 @@ class _TypingIndicatorState extends State<TypingIndicator>
       return const SizedBox.shrink();
     }
 
-    // Get the names of typing users
-    final names = widget.typingUsers
-        .map((user) => user.displayName ?? user.username ?? 'Someone')
-        .toList();
-
-    // Create the typing text
+    // Create the typing text based on conversation type and number of users
     String typingText;
-    if (names.length == 1) {
-      typingText = '${names[0]} is typing';
-    } else if (names.length == 2) {
-      typingText = '${names[0]} and ${names[1]} are typing';
-    } else if (names.length == 3) {
-      typingText = '${names[0]}, ${names[1]}, and ${names[2]} are typing';
+    if (widget.typingUsers.length == 1) {
+      if (widget.conversation.isDirectMessage) {
+        typingText = 'typing';
+      } else {
+        // TODO: Get actual username from user ID
+        typingText = 'Someone is typing';
+      }
     } else {
-      typingText = '${names.length} people are typing';
+      typingText = '${widget.typingUsers.length} people are typing';
     }
 
     return Container(

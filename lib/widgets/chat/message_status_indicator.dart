@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:pulsemeet/models/chat_message.dart';
+import 'package:pulsemeet/models/message.dart';
 
 /// A widget that displays the status of a message with animations
 class MessageStatusIndicator extends StatefulWidget {

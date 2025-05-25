@@ -5,7 +5,7 @@ import 'package:flutter_sound/flutter_sound.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:uuid/uuid.dart';
-import 'package:pulsemeet/models/chat_message.dart';
+import 'package:pulsemeet/models/message.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:audio_session/audio_session.dart';
 
@@ -652,16 +652,23 @@ class AudioService {
       debugPrint('Storage path: $filePath');
 
       // Upload the file
+      // Use audio/aac for M4A files to match Supabase bucket configuration
+      final String uploadMimeType =
+          audioFile.path.toLowerCase().endsWith('.m4a')
+              ? 'audio/aac'
+              : 'audio/mpeg';
+
       try {
         await _supabase.storage.from('audio').upload(
               filePath,
               audioFile,
-              fileOptions: const FileOptions(
-                contentType: 'audio/mpeg',
+              fileOptions: FileOptions(
+                contentType: uploadMimeType,
                 upsert: true,
               ),
             );
-        debugPrint('File uploaded successfully');
+        debugPrint(
+            'File uploaded successfully with MIME type: $uploadMimeType');
       } catch (uploadError) {
         // Check if the bucket exists
         debugPrint('Upload error: $uploadError');
@@ -706,12 +713,16 @@ class AudioService {
       debugPrint('Audio duration: $duration seconds');
 
       // Create MediaData object with local file path as fallback
+      // Use audio/aac for M4A files to match Supabase bucket configuration
+      final String mimeType = audioFile.path.toLowerCase().endsWith('.m4a')
+          ? 'audio/aac'
+          : 'audio/mpeg';
+
       return MediaData(
         url: fileUrl,
-        mimeType: 'audio/mpeg',
+        mimeType: mimeType,
         size: fileSize,
         duration: duration,
-        localFilePath: audioFile.path, // Store local path as fallback
       );
     } catch (e) {
       debugPrint('Error uploading audio: $e');
@@ -720,13 +731,16 @@ class AudioService {
       // This allows the UI to still display and play the audio even if upload failed
       try {
         final int fileSize = await audioFile.length();
+        // Use audio/aac for M4A files to match Supabase bucket configuration
+        final String mimeType = audioFile.path.toLowerCase().endsWith('.m4a')
+            ? 'audio/aac'
+            : 'audio/mpeg';
+
         return MediaData(
           url: 'file://${audioFile.path}',
-          mimeType: 'audio/mpeg',
+          mimeType: mimeType,
           size: fileSize,
           duration: _recordingDuration,
-          localFilePath: audioFile.path,
-          isLocalOnly: true, // Mark as local only
         );
       } catch (_) {
         return null;

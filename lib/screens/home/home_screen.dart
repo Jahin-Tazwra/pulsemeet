@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:pulsemeet/screens/home/nearby_pulses_tab.dart';
 import 'package:pulsemeet/screens/home/my_pulses_tab.dart';
-import 'package:pulsemeet/screens/home/chat_tab.dart';
+import 'package:pulsemeet/screens/chat/conversations_list_screen.dart';
 import 'package:pulsemeet/screens/home/profile_tab.dart';
 import 'package:pulsemeet/screens/pulse/location_selection_screen.dart';
 
@@ -20,7 +20,7 @@ class _HomeScreenState extends State<HomeScreen> {
   late final List<Widget> _tabs = [
     const NearbyPulsesTab(),
     const MyPulsesTab(),
-    const ChatTab(),
+    const ConversationsListScreen(),
     const ProfileTab(),
   ];
 

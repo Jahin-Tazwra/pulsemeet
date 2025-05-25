@@ -12,6 +12,9 @@ import 'services/supabase_service.dart';
 import 'services/pulse_notifier.dart';
 import 'services/notification_service.dart';
 import 'services/database_initialization_service.dart';
+import 'services/encryption_service.dart';
+import 'services/key_management_service.dart';
+import 'services/encrypted_message_service.dart';
 import 'screens/splash_screen.dart';
 import 'screens/auth/auth_screen.dart';
 import 'screens/home/home_screen.dart';
@@ -44,9 +47,42 @@ void main() async {
   final pulseNotifier = PulseNotifier();
   final notificationService = NotificationService();
 
-  // Initialize database schema
-  final dbInitService = DatabaseInitializationService();
-  await dbInitService.initialize();
+  // Initialize encryption services
+  final encryptionService = EncryptionService();
+  final keyManagementService = KeyManagementService();
+  final encryptedMessageService = EncryptedMessageService();
+
+  // Initialize database schema with timeout
+  try {
+    debugPrint('Starting database initialization...');
+    final dbInitService = DatabaseInitializationService();
+    await dbInitService.initialize().timeout(
+      const Duration(seconds: 10),
+      onTimeout: () {
+        debugPrint('Database initialization timed out after 10 seconds');
+        throw TimeoutException(
+            'Database initialization timeout', const Duration(seconds: 10));
+      },
+    );
+    debugPrint('Database initialization completed successfully');
+  } catch (e) {
+    debugPrint('Database initialization failed: $e');
+    // Continue app startup even if database initialization fails
+    debugPrint('Continuing app startup without database initialization');
+  }
+
+  // Initialize encryption services
+  try {
+    debugPrint('Starting encryption services initialization...');
+    await encryptionService.initialize();
+    await keyManagementService.initialize();
+    await encryptedMessageService.initialize();
+    debugPrint('Encryption services initialization completed successfully');
+  } catch (e) {
+    debugPrint('Encryption services initialization failed: $e');
+    // Continue app startup even if encryption initialization fails
+    debugPrint('Continuing app startup without encryption initialization');
+  }
 
   // Create the SupabaseService first
   final supabaseService = SupabaseService();

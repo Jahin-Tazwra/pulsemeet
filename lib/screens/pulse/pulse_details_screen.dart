@@ -16,7 +16,8 @@ import 'package:pulsemeet/services/waiting_list_service.dart';
 import 'package:pulsemeet/services/profile_service.dart';
 import 'package:pulsemeet/services/rating_service.dart';
 import 'package:pulsemeet/services/analytics_service.dart';
-import 'package:pulsemeet/screens/pulse/pulse_chat_screen.dart';
+import 'package:pulsemeet/services/conversation_service.dart';
+import 'package:pulsemeet/screens/chat/chat_screen.dart';
 import 'package:pulsemeet/screens/profile/user_profile_screen.dart';
 import 'package:pulsemeet/utils/map_styles.dart';
 import 'package:pulsemeet/utils/map_utils.dart';
@@ -48,6 +49,7 @@ class _PulseDetailsScreenState extends State<PulseDetailsScreen> {
   late final WaitingListService _waitingListService;
   late final ProfileService _profileService;
   late final RatingService _ratingService;
+  late final ConversationService _conversationService;
 
   // Flag to track if we're viewing the user's location
   bool _isViewingUserLocation = false;
@@ -75,6 +77,7 @@ class _PulseDetailsScreenState extends State<PulseDetailsScreen> {
     _waitingListService = WaitingListService();
     _profileService = ProfileService();
     _ratingService = RatingService();
+    _conversationService = ConversationService();
 
     // Debug log the pulse location
     debugPrint(
@@ -1341,15 +1344,7 @@ class _PulseDetailsScreenState extends State<PulseDetailsScreen> {
                     SizedBox(
                       width: double.infinity,
                       child: OutlinedButton.icon(
-                        onPressed: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) =>
-                                  PulseChatScreen(pulse: widget.pulse),
-                            ),
-                          );
-                        },
+                        onPressed: _openPulseChat,
                         icon: const Icon(Icons.chat),
                         label: const Text('Open Chat'),
                         style: OutlinedButton.styleFrom(
@@ -1407,6 +1402,40 @@ class _PulseDetailsScreenState extends State<PulseDetailsScreen> {
         ),
       ),
     );
+  }
+
+  /// Open the pulse group chat
+  Future<void> _openPulseChat() async {
+    try {
+      // Create or get pulse group conversation
+      final conversation =
+          await _conversationService.createPulseConversation(widget.pulse.id);
+
+      if (conversation != null && mounted) {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => ChatScreen(conversation: conversation),
+          ),
+        );
+      } else if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Failed to open chat'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error opening chat: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
 }
 

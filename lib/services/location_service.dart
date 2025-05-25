@@ -7,7 +7,7 @@ import 'package:geocoding/geocoding.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:pulsemeet/models/chat_message.dart';
+import 'package:pulsemeet/models/message.dart';
 import 'package:uuid/uuid.dart';
 
 /// A service for handling location-related functionality
@@ -97,8 +97,8 @@ class LocationService {
         latitude: position.latitude,
         longitude: position.longitude,
         address: address,
-        expiresAt: expiresAt,
-        isLive: isLive,
+        liveLocationExpiresAt: expiresAt,
+        isLiveLocation: isLive,
       );
     } catch (e) {
       debugPrint('Error creating location data: $e');
@@ -139,8 +139,8 @@ class LocationService {
         latitude: initialPosition.latitude,
         longitude: initialPosition.longitude,
         address: address,
-        expiresAt: expiresAt,
-        isLive: true,
+        liveLocationExpiresAt: expiresAt,
+        isLiveLocation: true,
       );
 
       // Call the callback with initial data
@@ -171,8 +171,8 @@ class LocationService {
           latitude: position.latitude,
           longitude: position.longitude,
           address: newAddress,
-          expiresAt: expiresAt,
-          isLive: true,
+          liveLocationExpiresAt: expiresAt,
+          isLiveLocation: true,
         );
 
         // Call the callback

@@ -1,9 +1,37 @@
 import 'dart:convert';
-import 'package:pulsemeet/models/chat_message.dart';
+import 'package:pulsemeet/models/message.dart';
 import 'package:pulsemeet/models/formatted_text.dart';
 import 'package:uuid/uuid.dart';
 
+/// MIGRATION GUIDE:
+/// ================
+/// This DirectMessage model is DEPRECATED and will be removed in a future version.
+///
+/// Please migrate to the unified Message model (lib/models/message.dart) which provides:
+/// - Better type safety with MessageType enum
+/// - Unified conversation architecture
+/// - Enhanced encryption support
+/// - Better performance and maintainability
+///
+/// Migration steps:
+/// 1. Replace DirectMessage with Message
+/// 2. Use ConversationService instead of DirectMessageService
+/// 3. Use conversation.isDirectMessage to identify direct messages
+/// 4. Use message.toUnifiedMessage() for gradual migration
+///
+/// Example migration:
+/// OLD: DirectMessage dm = DirectMessage(...)
+/// NEW: Message message = Message(conversationId: 'dm_user1_user2', ...)
+///
+/// For backward compatibility, use:
+/// - directMessage.toUnifiedMessage() to convert to Message
+/// - DirectMessage.fromUnifiedMessage() to convert from Message
+
 /// Model class for direct messages between users
+///
+/// @deprecated This class is deprecated. Use the unified Message model instead.
+/// This class is maintained for backward compatibility only.
+@Deprecated('Use Message model from lib/models/message.dart instead')
 class DirectMessage {
   final String id;
   final String senderId;
@@ -22,6 +50,9 @@ class DirectMessage {
   final String? replyToId;
   final DateTime? editedAt;
   final bool isOffline;
+  final bool isEncrypted;
+  final Map<String, dynamic>? encryptionMetadata;
+  final int keyVersion;
 
   DirectMessage({
     required this.id,
@@ -41,26 +72,14 @@ class DirectMessage {
     this.replyToId,
     this.editedAt,
     this.isOffline = false,
+    this.isEncrypted = false,
+    this.encryptionMetadata,
+    this.keyVersion = 1,
   });
 
   /// Create DirectMessage from JSON
   factory DirectMessage.fromJson(Map<String, dynamic> json) {
-    // Parse reactions if available
-    List<MessageReaction> reactions = [];
-    if (json['reactions'] != null) {
-      try {
-        final reactionsData = json['reactions'] is String
-            ? jsonDecode(json['reactions'])
-            : json['reactions'];
-        if (reactionsData is List) {
-          reactions = reactionsData
-              .map<MessageReaction>((r) => MessageReaction.fromJson(r))
-              .toList();
-        }
-      } catch (e) {
-        // Ignore parsing errors
-      }
-    }
+    // Note: reactions are not supported in DirectMessage (use unified Message model instead)
 
     // Parse media data if available
     MediaData? mediaData;
@@ -107,6 +126,9 @@ class DirectMessage {
       editedAt:
           json['edited_at'] != null ? DateTime.parse(json['edited_at']) : null,
       isOffline: json['is_offline'] ?? false,
+      isEncrypted: json['is_encrypted'] ?? false,
+      encryptionMetadata: json['encryption_metadata'],
+      keyVersion: json['key_version'] ?? 1,
     );
   }
 
@@ -128,6 +150,9 @@ class DirectMessage {
           locationData != null ? jsonEncode(locationData!.toJson()) : null,
       'reply_to_id': replyToId,
       'edited_at': editedAt?.toIso8601String(),
+      'is_encrypted': isEncrypted,
+      'encryption_metadata': encryptionMetadata,
+      'key_version': keyVersion,
     };
   }
 
@@ -150,6 +175,9 @@ class DirectMessage {
     String? replyToId,
     DateTime? editedAt,
     bool? isOffline,
+    bool? isEncrypted,
+    Map<String, dynamic>? encryptionMetadata,
+    int? keyVersion,
   }) {
     return DirectMessage(
       id: id ?? this.id,
@@ -169,6 +197,9 @@ class DirectMessage {
       replyToId: replyToId ?? this.replyToId,
       editedAt: editedAt ?? this.editedAt,
       isOffline: isOffline ?? this.isOffline,
+      isEncrypted: isEncrypted ?? this.isEncrypted,
+      encryptionMetadata: encryptionMetadata ?? this.encryptionMetadata,
+      keyVersion: keyVersion ?? this.keyVersion,
     );
   }
 
@@ -211,7 +242,7 @@ class DirectMessage {
   /// Parse message status from string
   static MessageStatus _parseMessageStatus(String? status) {
     if (status == null) return MessageStatus.sent;
-    
+
     switch (status) {
       case 'sending':
         return MessageStatus.sending;
@@ -254,6 +285,86 @@ class DirectMessage {
       locationData: locationData,
       replyToId: replyToId,
       isOffline: true,
+      isEncrypted: false, // Offline messages start unencrypted
+      keyVersion: 1,
     );
+  }
+
+  /// Convert DirectMessage to unified Message model
+  /// This method helps migrate from the deprecated DirectMessage to the new unified Message model
+  Message toUnifiedMessage({String? conversationId}) {
+    return Message(
+      id: id,
+      conversationId: conversationId ??
+          'dm_${senderId}_$receiverId', // Generate conversation ID if not provided
+      senderId: senderId,
+      messageType: _getMessageType(),
+      content: content,
+      isDeleted: isDeleted,
+      createdAt: createdAt,
+      updatedAt: updatedAt,
+      editedAt: editedAt,
+      status: status,
+      replyToId: replyToId,
+      mediaData: mediaData,
+      locationData: locationData,
+      isFormatted: isFormatted,
+      isEncrypted: isEncrypted,
+      encryptionMetadata: encryptionMetadata,
+      senderName: senderName,
+      senderAvatarUrl: senderAvatarUrl,
+      isOffline: isOffline,
+      // Set default values for fields not available in DirectMessage
+      reactions: [],
+      mentions: [],
+    );
+  }
+
+  /// Create DirectMessage from unified Message model
+  /// This factory helps with backward compatibility
+  factory DirectMessage.fromUnifiedMessage(Message message, String receiverId) {
+    return DirectMessage(
+      id: message.id,
+      senderId: message.senderId,
+      receiverId: receiverId,
+      senderName: message.senderName,
+      senderAvatarUrl: message.senderAvatarUrl,
+      content: message.content,
+      messageType: message.messageType.name, // Convert enum to string
+      createdAt: message.createdAt,
+      updatedAt: message.updatedAt,
+      editedAt: message.editedAt,
+      status: message.status,
+      replyToId: message.replyToId,
+      mediaData: message.mediaData,
+      locationData: message.locationData,
+      isFormatted: message.isFormatted,
+      isEncrypted: message.isEncrypted,
+      encryptionMetadata: message.encryptionMetadata,
+      keyVersion: message.keyVersion,
+      isDeleted: message.isDeleted,
+      isOffline: message.isOffline,
+    );
+  }
+
+  /// Helper method to determine MessageType from legacy data
+  MessageType _getMessageType() {
+    if (mediaData != null) {
+      if (mediaData!.isImage) return MessageType.image;
+      if (mediaData!.isVideo) return MessageType.video;
+      if (mediaData!.isAudio) return MessageType.audio;
+      return MessageType.file;
+    }
+    if (locationData != null) return MessageType.location;
+
+    // Check messageType string for other types
+    switch (messageType.toLowerCase()) {
+      case 'call':
+        return MessageType.call;
+      case 'system':
+        return MessageType.system;
+      default:
+        return MessageType.text;
+    }
   }
 }

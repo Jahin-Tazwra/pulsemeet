@@ -1,6 +1,7 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:pulsemeet/models/chat_message.dart';
+import 'package:pulsemeet/models/message.dart';
 import 'package:pulsemeet/services/audio_service.dart';
 
 /// A widget for playing audio messages
@@ -22,6 +23,7 @@ class AudioPlayerWidget extends StatefulWidget {
 
 class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
   final AudioService _audioService = AudioService();
+  StreamSubscription<PlaybackState>? _playbackSubscription;
 
   bool _isPlaying = false;
   bool _isLoading = false;
@@ -36,11 +38,14 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
     _subscribeToPlaybackUpdates();
 
     // Set initial time text
-    _timeText = widget.mediaData.getFormattedDuration();
+    _timeText = _formatDuration(widget.mediaData.duration ?? 0);
   }
 
   @override
   void dispose() {
+    // Cancel the stream subscription to prevent memory leaks
+    _playbackSubscription?.cancel();
+
     // Stop playback if this widget is disposed while playing
     if (_isPlaying) {
       _audioService.stopAudio();
@@ -50,8 +55,8 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
 
   /// Subscribe to playback updates
   void _subscribeToPlaybackUpdates() {
-    _audioService.playbackStateStream.listen((state) {
-      if (state.messageId == widget.messageId) {
+    _playbackSubscription = _audioService.playbackStateStream.listen((state) {
+      if (state.messageId == widget.messageId && mounted) {
         setState(() {
           _isPlaying = state.isPlaying;
           _isLoading = state.isLoading;
@@ -68,7 +73,7 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
                 '$minutes:${remainingSeconds.toString().padLeft(2, '0')}';
           } else if (!_isLoading && !_hasError) {
             // Reset to total duration when stopped (but not when loading or error)
-            _timeText = widget.mediaData.getFormattedDuration();
+            _timeText = _formatDuration(widget.mediaData.duration ?? 0);
             _progress = 0.0;
           }
         });
@@ -84,7 +89,7 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
     }
 
     // Get the effective URL (local or remote)
-    final String effectiveUrl = widget.mediaData.getEffectiveUrl();
+    final String effectiveUrl = widget.mediaData.url;
     final bool isLocalFile = effectiveUrl.startsWith('file://');
 
     // For local files, check if the file exists
@@ -110,6 +115,13 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
       // For remote files, use the normal playback
       _audioService.playAudio(widget.messageId, effectiveUrl);
     }
+  }
+
+  /// Format duration in seconds to MM:SS format
+  String _formatDuration(int seconds) {
+    final int minutes = seconds ~/ 60;
+    final int remainingSeconds = seconds % 60;
+    return '$minutes:${remainingSeconds.toString().padLeft(2, '0')}';
   }
 
   @override

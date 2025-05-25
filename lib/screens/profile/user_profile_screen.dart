@@ -6,8 +6,9 @@ import 'package:pulsemeet/models/connection.dart';
 import 'package:pulsemeet/models/rating.dart';
 import 'package:pulsemeet/services/supabase_service.dart';
 import 'package:pulsemeet/services/connection_service.dart';
+import 'package:pulsemeet/services/conversation_service.dart';
 import 'package:pulsemeet/services/rating_service.dart';
-import 'package:pulsemeet/screens/chat/direct_message_screen.dart';
+import 'package:pulsemeet/screens/chat/chat_screen.dart';
 import 'package:pulsemeet/screens/profile/ratings_screen.dart';
 import 'package:pulsemeet/widgets/profile/profile_header.dart';
 import 'package:pulsemeet/widgets/profile/profile_info_section.dart';
@@ -32,6 +33,7 @@ class UserProfileScreen extends StatefulWidget {
 
 class _UserProfileScreenState extends State<UserProfileScreen> {
   final _connectionService = ConnectionService();
+  final _conversationService = ConversationService();
   final _ratingService = RatingService();
 
   Profile? _profile;
@@ -371,6 +373,40 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
     }
   }
 
+  /// Start a direct message with this user
+  Future<void> _startDirectMessage() async {
+    try {
+      // Create or get direct conversation
+      final conversation =
+          await _conversationService.createDirectConversation(widget.userId);
+
+      if (conversation != null && mounted) {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => ChatScreen(conversation: conversation),
+          ),
+        );
+      } else if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Failed to create conversation'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error starting conversation: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -381,17 +417,7 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
               _connectionStatus == ConnectionStatus.accepted)
             IconButton(
               icon: const Icon(Icons.message_outlined),
-              onPressed: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => DirectMessageScreen(
-                      otherUserId: widget.userId,
-                      otherUserProfile: _profile,
-                    ),
-                  ),
-                );
-              },
+              onPressed: () => _startDirectMessage(),
               tooltip: 'Message',
             ),
         ],
@@ -636,17 +662,7 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
         mainAxisSize: MainAxisSize.min,
         children: [
           ElevatedButton.icon(
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => DirectMessageScreen(
-                    otherUserId: widget.userId,
-                    otherUserProfile: _profile,
-                  ),
-                ),
-              );
-            },
+            onPressed: _startDirectMessage,
             icon: const Icon(Icons.message_outlined),
             label: const Text('Message'),
             style: ElevatedButton.styleFrom(

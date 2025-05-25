@@ -19,6 +19,7 @@ dependencies:
 
   # Supabase Backend
   supabase_flutter: ^1.10.18
+  google_sign_in: ^6.1.5
 
   # Location & Maps
   geolocator: ^9.0.2
@@ -66,6 +67,12 @@ dependencies:
   flutter_dotenv: ^5.1.0
   http: ^1.1.0
   share_plus: ^7.2.1
+
+  # Encryption & Security
+  flutter_secure_storage: ^9.0.0
+  crypto: ^3.0.3
+  pointycastle: ^3.7.3
+  cryptography: ^2.5.0
 
 dev_dependencies:
   flutter_test:

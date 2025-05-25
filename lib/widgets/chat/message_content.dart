@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
-import 'package:pulsemeet/models/chat_message.dart';
+import 'package:pulsemeet/models/message.dart';
+import 'package:pulsemeet/models/encryption_key.dart';
 import 'package:pulsemeet/models/formatted_text.dart';
 import 'package:pulsemeet/services/profile_service.dart';
 import 'package:pulsemeet/screens/profile/user_profile_screen.dart';
@@ -11,13 +12,17 @@ import 'package:pulsemeet/widgets/chat/audio_player.dart';
 
 /// A widget that displays the content of a chat message
 class MessageContent extends StatefulWidget {
-  final ChatMessage message;
+  final Message message;
   final bool isFromCurrentUser;
+  final String? conversationId;
+  final ConversationType? conversationType;
 
   const MessageContent({
     super.key,
     required this.message,
     required this.isFromCurrentUser,
+    this.conversationId,
+    this.conversationType,
   });
 
   @override
@@ -75,25 +80,29 @@ class _MessageContentState extends State<MessageContent> {
     }
 
     // If the message has expired, show a placeholder
-    if (widget.message.isExpired()) {
+    if (widget.message.expiresAt != null &&
+        DateTime.now().isAfter(widget.message.expiresAt!)) {
       return _buildExpiredMessage(context);
     }
 
     // Handle different message types
-    if (widget.message.isTextMessage) {
-      return _buildTextMessage(context);
-    } else if (widget.message.isImageMessage) {
-      return _buildImageMessage(context);
-    } else if (widget.message.isVideoMessage) {
-      return _buildVideoMessage(context);
-    } else if (widget.message.isAudioMessage) {
-      return _buildAudioMessage(context);
-    } else if (widget.message.isLocationMessage) {
-      return _buildLocationMessage(context);
-    } else if (widget.message.isLiveLocationMessage) {
-      return _buildLiveLocationMessage(context);
-    } else {
-      return _buildUnsupportedMessage(context);
+    switch (widget.message.messageType) {
+      case MessageType.text:
+        return _buildTextMessage(context);
+      case MessageType.image:
+        return _buildImageMessage(context);
+      case MessageType.video:
+        return _buildVideoMessage(context);
+      case MessageType.audio:
+        return _buildAudioMessage(context);
+      case MessageType.location:
+        return _buildLocationMessage(context);
+      case MessageType.file:
+        return _buildFileMessage(context);
+      case MessageType.call:
+        return _buildCallMessage(context);
+      default:
+        return _buildUnsupportedMessage(context);
     }
   }
 
@@ -134,7 +143,9 @@ class _MessageContentState extends State<MessageContent> {
   /// Build a text message
   Widget _buildTextMessage(BuildContext context) {
     // Check if the message has formatted text or mentions
-    final formattedText = widget.message.getFormattedText();
+    final formattedText = widget.message.isFormatted
+        ? FormattedText.decode(widget.message.content)
+        : null;
     if (formattedText != null) {
       return Container(
         width: double.infinity,
@@ -190,6 +201,8 @@ class _MessageContentState extends State<MessageContent> {
           MediaPreview(
             mediaData: widget.message.mediaData!,
             isFromCurrentUser: widget.isFromCurrentUser,
+            conversationId: widget.conversationId,
+            conversationType: widget.conversationType,
           ),
 
           // Caption (if any)
@@ -220,6 +233,8 @@ class _MessageContentState extends State<MessageContent> {
           MediaPreview(
             mediaData: widget.message.mediaData!,
             isFromCurrentUser: widget.isFromCurrentUser,
+            conversationId: widget.conversationId,
+            conversationType: widget.conversationType,
           ),
 
           // Caption (if any)
@@ -315,8 +330,10 @@ class _MessageContentState extends State<MessageContent> {
     }
 
     // Check if the live location has expired
-    final bool isExpired = widget.message.locationData!.expiresAt != null &&
-        DateTime.now().isAfter(widget.message.locationData!.expiresAt!);
+    final bool isExpired =
+        widget.message.locationData!.liveLocationExpiresAt != null &&
+            DateTime.now()
+                .isAfter(widget.message.locationData!.liveLocationExpiresAt!);
 
     return SizedBox(
       width: double.infinity, // Take full width of parent
@@ -332,7 +349,7 @@ class _MessageContentState extends State<MessageContent> {
             ),
             address: widget.message.locationData!.address,
             isLive: !isExpired,
-            expiresAt: widget.message.locationData!.expiresAt,
+            expiresAt: widget.message.locationData!.liveLocationExpiresAt,
             isFromCurrentUser: widget.isFromCurrentUser,
           ),
 
@@ -343,6 +360,63 @@ class _MessageContentState extends State<MessageContent> {
               padding: const EdgeInsets.all(12.0),
               child: _buildCaption(context),
             ),
+        ],
+      ),
+    );
+  }
+
+  /// Build a file message
+  Widget _buildFileMessage(BuildContext context) {
+    if (widget.message.mediaData == null) {
+      return _buildUnsupportedMessage(context);
+    }
+
+    return SizedBox(
+      width: double.infinity,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          // File preview
+          MediaPreview(
+            mediaData: widget.message.mediaData!,
+            isFromCurrentUser: widget.isFromCurrentUser,
+            conversationId: widget.conversationId,
+            conversationType: widget.conversationType,
+          ),
+
+          // Caption (if any)
+          if (widget.message.content.isNotEmpty)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12.0),
+              child: _buildCaption(context),
+            ),
+        ],
+      ),
+    );
+  }
+
+  /// Build a call message
+  Widget _buildCallMessage(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12.0),
+      child: Row(
+        children: [
+          Icon(
+            Icons.call,
+            color: widget.isFromCurrentUser ? Colors.white70 : Colors.black54,
+            size: 16,
+          ),
+          const SizedBox(width: 8),
+          Text(
+            widget.message.content.isNotEmpty ? widget.message.content : 'Call',
+            style: TextStyle(
+              fontStyle: FontStyle.italic,
+              fontSize: 14.0,
+              color: widget.isFromCurrentUser ? Colors.white70 : Colors.black54,
+            ),
+          ),
         ],
       ),
     );

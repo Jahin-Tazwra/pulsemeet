@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:pulsemeet/models/connection.dart';
 import 'package:pulsemeet/services/connection_service.dart';
+import 'package:pulsemeet/services/conversation_service.dart';
 import 'package:pulsemeet/screens/profile/user_profile_screen.dart';
 import 'package:pulsemeet/screens/connections/user_search_screen.dart';
 import 'package:pulsemeet/screens/connections/connection_requests_screen.dart';
-import 'package:pulsemeet/screens/chat/direct_message_screen.dart';
+import 'package:pulsemeet/screens/chat/chat_screen.dart';
 import 'package:pulsemeet/widgets/profile/profile_list_item.dart';
 
 /// Screen for viewing and managing connections
@@ -17,6 +18,7 @@ class ConnectionsScreen extends StatefulWidget {
 
 class _ConnectionsScreenState extends State<ConnectionsScreen> {
   final _connectionService = ConnectionService();
+  final _conversationService = ConversationService();
 
   bool _isLoading = true;
   List<Connection> _connections = [];
@@ -108,6 +110,40 @@ class _ConnectionsScreenState extends State<ConnectionsScreen> {
           SnackBar(
             content: Text('Error removing connection: ${e.toString()}'),
             duration: const Duration(seconds: 2),
+          ),
+        );
+      }
+    }
+  }
+
+  /// Start a direct message with a user
+  Future<void> _startDirectMessage(String otherUserId) async {
+    try {
+      // Create or get direct conversation
+      final conversation =
+          await _conversationService.createDirectConversation(otherUserId);
+
+      if (conversation != null && mounted) {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => ChatScreen(conversation: conversation),
+          ),
+        );
+      } else if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Failed to create conversation'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error starting conversation: $e'),
+            backgroundColor: Colors.red,
           ),
         );
       }
@@ -284,17 +320,7 @@ class _ConnectionsScreenState extends State<ConnectionsScreen> {
               children: [
                 IconButton(
                   icon: const Icon(Icons.message_outlined),
-                  onPressed: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => DirectMessageScreen(
-                          otherUserId: otherUserProfile.id,
-                          otherUserProfile: otherUserProfile,
-                        ),
-                      ),
-                    );
-                  },
+                  onPressed: () => _startDirectMessage(otherUserProfile.id),
                   tooltip: 'Message',
                 ),
                 IconButton(

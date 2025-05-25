@@ -5,15 +5,25 @@ import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../config/supabase_config.dart';
 import '../models/pulse.dart';
 import '../models/profile.dart';
-import '../models/chat_message.dart';
+import '../models/message.dart';
 
 /// Service class for interacting with Supabase
 class SupabaseService {
   final SupabaseClient _client = SupabaseConfig.client;
+
+  // Google Sign-In instance for native authentication
+  final GoogleSignIn _googleSignIn = GoogleSignIn(
+    scopes: ['email', 'profile'],
+    // Use serverClientId for Android, clientId for web
+    serverClientId: kIsWeb
+        ? null
+        : '241993306821-2rikugjskphsr867h067q1ifrkb2i7rq.apps.googleusercontent.com',
+  );
 
   // Expose client for direct access in special cases
   SupabaseClient get client => _client;
@@ -120,10 +130,11 @@ class SupabaseService {
     return response;
   }
 
-  /// Sign in with Google
+  /// Sign in with Google using native account picker
   Future<void> signInWithGoogle() async {
     try {
-      debugPrint('Starting Google sign-in process');
+      debugPrint('Starting native Google sign-in process');
+      debugPrint('Google Sign-In client ID: ${_googleSignIn.clientId}');
 
       // Check if there's an existing session first
       final currentSession = _client.auth.currentSession;
@@ -133,24 +144,72 @@ class SupabaseService {
       }
 
       if (kIsWeb) {
-        // web uses the hosted flow redirect
-        await _client.auth.signInWithOAuth(
-          Provider.google,
-        );
-      } else {
-        // mobile uses your Android/iOS intent‐filter deep link
-        await _client.auth.signInWithOAuth(
-          Provider.google,
-          redirectTo: 'com.example.pulsemeet://login-callback',
-        );
-        debugPrint('Google sign-in initiated');
+        // For web, fall back to OAuth flow
+        await _client.auth.signInWithOAuth(Provider.google);
+        return;
       }
 
-      // Note: The actual sign-in happens asynchronously through the redirect flow
-      // The app will be redirected to Google and then back to the app via the deep link
-      // The auth state listener in the app will handle the sign-in completion
+      // For mobile, use native Google Sign-In
+      debugPrint('Initiating native Google Sign-In');
+
+      // Sign out any existing Google account to force account picker
+      await _googleSignIn.signOut();
+
+      // Trigger the native Google Sign-In flow
+      final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();
+
+      if (googleUser == null) {
+        debugPrint('Google sign-in was cancelled by user');
+        throw Exception('Google sign-in was cancelled');
+      }
+
+      debugPrint('Google user selected: ${googleUser.email}');
+
+      // Get the authentication details
+      final GoogleSignInAuthentication googleAuth =
+          await googleUser.authentication;
+
+      if (googleAuth.idToken == null) {
+        debugPrint(
+            'Failed to get Google ID token - this may indicate a configuration issue');
+        debugPrint('Access token present: ${googleAuth.accessToken != null}');
+        throw Exception(
+            'Failed to get Google ID token. Please check Google Services configuration.');
+      }
+
+      debugPrint('Got Google ID token, signing in to Supabase');
+
+      // Sign in to Supabase using the Google ID token
+      final AuthResponse response = await _client.auth.signInWithIdToken(
+        provider: Provider.google,
+        idToken: googleAuth.idToken!,
+        accessToken: googleAuth.accessToken,
+      );
+
+      if (response.user == null) {
+        throw Exception('Failed to authenticate with Supabase');
+      }
+
+      debugPrint('Successfully signed in with Google: ${response.user!.email}');
     } catch (e) {
       debugPrint('Error during Google sign-in: $e');
+
+      // Provide more specific error messages for common issues
+      if (e.toString().contains('ApiException: 10')) {
+        debugPrint('DEVELOPER_ERROR (10): This usually means:');
+        debugPrint('1. google-services.json is missing or misconfigured');
+        debugPrint('2. SHA-1 fingerprint not registered in Google Console');
+        debugPrint('3. Package name mismatch');
+        debugPrint('4. Google Services plugin not properly configured');
+      }
+
+      // Make sure to sign out from Google on error
+      try {
+        await _googleSignIn.signOut();
+      } catch (signOutError) {
+        debugPrint('Error during Google sign-out: $signOutError');
+      }
+
       rethrow;
     }
   }
@@ -164,7 +223,21 @@ class SupabaseService {
 
   /// Sign out
   Future<void> signOut() async {
-    await _client.auth.signOut();
+    try {
+      // Sign out from Google if signed in
+      if (await _googleSignIn.isSignedIn()) {
+        await _googleSignIn.signOut();
+        debugPrint('Signed out from Google');
+      }
+
+      // Sign out from Supabase
+      await _client.auth.signOut();
+      debugPrint('Signed out from Supabase');
+    } catch (e) {
+      debugPrint('Error during sign out: $e');
+      // Still try to sign out from Supabase even if Google sign out fails
+      await _client.auth.signOut();
+    }
   }
 
   /// Create or update user profile
@@ -900,7 +973,7 @@ class SupabaseService {
   }
 
   /// Send a chat message
-  Future<ChatMessage> sendChatMessage({
+  Future<Message> sendChatMessage({
     required String pulseId,
     required String content,
     String messageType = 'text',
@@ -920,19 +993,18 @@ class SupabaseService {
     final response =
         await _client.from('chat_messages').insert(data).select().single();
 
-    return ChatMessage.fromJson(response);
+    return Message.fromJson(response);
   }
 
   /// Subscribe to chat messages for a pulse
-  Stream<List<ChatMessage>> subscribeToChatMessages(String pulseId) {
+  Stream<List<Message>> subscribeToChatMessages(String pulseId) {
     final stream = _client
         .from('chat_messages')
         .stream(primaryKey: ['id'])
         .eq('pulse_id', pulseId)
         .order('created_at')
         .map(
-          (data) =>
-              data.map((message) => ChatMessage.fromJson(message)).toList(),
+          (data) => data.map((message) => Message.fromJson(message)).toList(),
         );
 
     return stream;
