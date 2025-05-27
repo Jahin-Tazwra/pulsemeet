@@ -46,3 +46,10 @@ app.*.map.json
 
 
 .env
+
+# Google Cloud Service Account credentials
+*.json
+**/google-services.json
+**/GoogleService-Info.plist
+**/*-service-account*.json
+**/*-credentials*.json
