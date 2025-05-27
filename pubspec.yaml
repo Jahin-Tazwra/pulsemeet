@@ -67,6 +67,7 @@ dependencies:
   flutter_dotenv: ^5.1.0
   http: ^1.1.0
   share_plus: ^7.2.1
+  mime: ^1.0.4
 
   # Encryption & Security
   flutter_secure_storage: ^9.0.0

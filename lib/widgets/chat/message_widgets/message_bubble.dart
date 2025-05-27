@@ -7,6 +7,7 @@ import 'package:pulsemeet/widgets/chat/message_widgets/text_message_widget.dart'
 import 'package:pulsemeet/widgets/chat/message_widgets/media_message_widget.dart';
 import 'package:pulsemeet/widgets/chat/message_widgets/system_message_widget.dart';
 import 'package:pulsemeet/widgets/chat/security_indicators.dart';
+import 'package:pulsemeet/widgets/chat/message_status_indicator.dart';
 import 'package:pulsemeet/widgets/avatar.dart';
 
 /// Main message bubble widget that adapts to different message types
@@ -123,14 +124,23 @@ class MessageBubble extends StatelessWidget {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
 
-    // Determine bubble colors
+    // Determine bubble colors with proper dark mode contrast
     Color bubbleColor;
     Color textColor;
 
     if (isFromCurrentUser) {
-      bubbleColor = theme.primaryColor;
-      textColor = Colors.white;
+      // CRITICAL FIX: Better contrast for current user's messages in dark mode
+      if (isDark) {
+        // Use a distinct blue color in dark mode for better contrast
+        bubbleColor = const Color(0xFF1E88E5); // Material Blue 600
+        textColor = Colors.white;
+      } else {
+        // Use primary color in light mode
+        bubbleColor = theme.primaryColor;
+        textColor = Colors.white;
+      }
     } else {
+      // Other users' messages
       bubbleColor = isDark ? const Color(0xFF2C2C2C) : const Color(0xFFE5E5EA);
       textColor = isDark ? Colors.white : Colors.black87;
     }
@@ -167,8 +177,10 @@ class MessageBubble extends StatelessWidget {
         borderRadius: borderRadius,
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.1),
-            blurRadius: 2,
+            color: isDark
+                ? Colors.black.withOpacity(0.3)
+                : Colors.black.withOpacity(0.1),
+            blurRadius: isDark ? 3 : 2,
             offset: const Offset(0, 1),
           ),
         ],
@@ -303,11 +315,14 @@ class MessageBubble extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         // Message time
-        Text(
-          _formatMessageTime(message.createdAt),
-          style: theme.textTheme.bodySmall?.copyWith(
-            color: isDark ? Colors.grey[500] : Colors.grey[600],
-            fontSize: 11,
+        Flexible(
+          child: Text(
+            _formatMessageTime(message.createdAt),
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: isDark ? Colors.grey[500] : Colors.grey[600],
+              fontSize: 11,
+            ),
+            overflow: TextOverflow.ellipsis,
           ),
         ),
 
@@ -324,44 +339,12 @@ class MessageBubble extends StatelessWidget {
         // Message status (for current user messages)
         if (isFromCurrentUser) ...[
           const SizedBox(width: 4),
-          _buildMessageStatus(context),
+          MessageStatusIndicator(
+            status: message.status,
+            size: 12,
+          ),
         ],
       ],
-    );
-  }
-
-  /// Build message status indicator
-  Widget _buildMessageStatus(BuildContext context) {
-    final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
-
-    IconData icon;
-    Color color = isDark ? Colors.grey[500]! : Colors.grey[600]!;
-
-    switch (message.status) {
-      case MessageStatus.sending:
-        icon = Icons.access_time;
-        break;
-      case MessageStatus.sent:
-        icon = Icons.check;
-        break;
-      case MessageStatus.delivered:
-        icon = Icons.done_all;
-        break;
-      case MessageStatus.read:
-        icon = Icons.done_all;
-        color = theme.primaryColor;
-        break;
-      case MessageStatus.failed:
-        icon = Icons.error_outline;
-        color = Colors.red;
-        break;
-    }
-
-    return Icon(
-      icon,
-      size: 12,
-      color: color,
     );
   }
 

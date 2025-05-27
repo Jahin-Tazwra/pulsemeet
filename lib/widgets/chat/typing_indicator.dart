@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:pulsemeet/models/conversation.dart';
 
-/// A widget that displays a typing indicator
 class TypingIndicator extends StatefulWidget {
   final List<String> typingUsers;
   final Conversation conversation;
@@ -19,98 +18,166 @@ class TypingIndicator extends StatefulWidget {
 }
 
 class _TypingIndicatorState extends State<TypingIndicator>
-    with SingleTickerProviderStateMixin {
-  late AnimationController _controller;
-  late List<Animation<double>> _animations;
+    with TickerProviderStateMixin {
+  late AnimationController _fadeController;
+  late AnimationController _dotsController;
+  late Animation<double> _fadeAnimation;
+  late Animation<double> _dotsAnimation;
+
+  bool _isVisible = false;
+  bool _shouldShow = false;
+  String _lastTypingText = 'typing';
 
   @override
   void initState() {
     super.initState();
-    _controller = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1200),
-    )..repeat();
 
-    // Create animations for the dots
-    _animations = List.generate(
-      3,
-      (index) => Tween<double>(begin: 0.0, end: 1.0).animate(
-        CurvedAnimation(
-          parent: _controller,
-          curve: Interval(
-            index * 0.2,
-            0.6 + index * 0.2,
-            curve: Curves.easeInOut,
-          ),
-        ),
-      ),
+    _fadeController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 300),
     );
+
+    _dotsController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1500),
+    );
+
+    _fadeAnimation = CurvedAnimation(
+      parent: _fadeController,
+      curve: Curves.easeInOut,
+    );
+
+    _dotsAnimation = CurvedAnimation(
+      parent: _dotsController,
+      curve: Curves.easeInOut,
+    );
+
+    _shouldShow = widget.typingUsers.isNotEmpty;
+    if (_shouldShow) {
+      _isVisible = true;
+      _fadeController.forward();
+      _dotsController.repeat();
+    } else {
+      _isVisible = false;
+    }
+  }
+
+  @override
+  void didUpdateWidget(TypingIndicator oldWidget) {
+    super.didUpdateWidget(oldWidget);
+
+    final shouldShowNow = widget.typingUsers.isNotEmpty;
+
+    if (shouldShowNow != _shouldShow) {
+      _shouldShow = shouldShowNow;
+
+      if (_shouldShow) {
+        if (!_isVisible) {
+          setState(() {
+            _isVisible = true;
+          });
+        }
+        _fadeController.forward();
+        _dotsController.repeat();
+      } else {
+        _dotsController.stop();
+        _fadeController.reverse().then((_) {
+          if (mounted) {
+            setState(() {
+              _isVisible = false;
+            });
+          }
+        });
+      }
+    }
   }
 
   @override
   void dispose() {
-    _controller.dispose();
+    _fadeController.dispose();
+    _dotsController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    // If no one is typing, return an empty container
-    if (widget.typingUsers.isEmpty) {
+    if (!_isVisible) {
       return const SizedBox.shrink();
     }
 
-    // Create the typing text based on conversation type and number of users
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+
     String typingText;
-    if (widget.typingUsers.length == 1) {
-      if (widget.conversation.isDirectMessage) {
-        typingText = 'typing';
-      } else {
-        // TODO: Get actual username from user ID
-        typingText = 'Someone is typing';
-      }
+    final typingCount = widget.typingUsers.length;
+
+    if (typingCount == 0) {
+      typingText = _lastTypingText;
+    } else if (typingCount == 1) {
+      typingText =
+          widget.conversation.isDirectMessage ? 'Typing' : 'Someone is typing';
+      _lastTypingText = typingText;
     } else {
-      typingText = '${widget.typingUsers.length} people are typing';
+      typingText = '$typingCount people are typing';
+      _lastTypingText = typingText;
     }
 
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(
-            typingText,
-            style: TextStyle(
-              fontSize: 12.0,
-              color: widget.color ?? Colors.grey[600],
-              fontStyle: FontStyle.italic,
-            ),
+    final baseColor =
+        widget.color ?? (isDark ? Colors.grey[300] : Colors.grey[800]);
+
+    return FadeTransition(
+      opacity: _fadeAnimation,
+      child: Center(
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+          margin: const EdgeInsets.only(bottom: 8),
+          decoration: BoxDecoration(
+            color: isDark
+                ? Colors.white.withOpacity(0.05)
+                : Colors.black.withOpacity(0.05),
+            borderRadius: BorderRadius.circular(20),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.05),
+                blurRadius: 8,
+                offset: const Offset(0, 2),
+              )
+            ],
           ),
-          const SizedBox(width: 4.0),
-          // Animated dots
-          ...List.generate(
-            3,
-            (index) => AnimatedBuilder(
-              animation: _animations[index],
-              builder: (context, child) {
-                return Container(
-                  margin: const EdgeInsets.symmetric(horizontal: 1.0),
-                  child: Transform.translate(
-                    offset: Offset(0, -3.0 * _animations[index].value),
-                    child: Text(
-                      '.',
-                      style: TextStyle(
-                        fontSize: 12.0,
-                        color: widget.color ?? Colors.grey[600],
-                        fontWeight: FontWeight.bold,
-                      ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                typingText,
+                style: TextStyle(
+                  fontSize: 13.5,
+                  color: baseColor,
+                  fontWeight: FontWeight.w500,
+                  fontStyle: FontStyle.italic,
+                  decoration: TextDecoration.none,
+                ),
+              ),
+              const SizedBox(width: 4),
+              AnimatedBuilder(
+                animation: _dotsAnimation,
+                builder: (context, child) {
+                  int dotCount = ((_dotsAnimation.value * 3) % 4).floor();
+                  String dots = '.' * dotCount;
+                  return Text(
+                    dots,
+                    style: TextStyle(
+                      fontSize: 13.5,
+                      color: baseColor,
+                      fontWeight: FontWeight.w500,
+                      fontStyle: FontStyle.italic,
+                      decoration: TextDecoration.none,
                     ),
-                  ),
-                );
-              },
-            ),
+                  );
+                },
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }

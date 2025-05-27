@@ -50,14 +50,22 @@ class _MessageStatusIndicatorState extends State<MessageStatusIndicator>
   void didUpdateWidget(MessageStatusIndicator oldWidget) {
     super.didUpdateWidget(oldWidget);
 
-    // If status changed, animate
+    // ENHANCED DEBUG: Log all status changes
     if (oldWidget.status != widget.status) {
+      debugPrint(
+          '🎯 MessageStatusIndicator: Status changed from ${oldWidget.status} to ${widget.status}');
+
       // Reset and start animation for status changes
       if (widget.status != MessageStatus.sending &&
           widget.status != MessageStatus.failed) {
         _controller.reset();
         _controller.forward();
+        debugPrint(
+            '🎯 MessageStatusIndicator: Animation started for status ${widget.status}');
       }
+    } else {
+      debugPrint(
+          '🎯 MessageStatusIndicator: Widget updated but status unchanged: ${widget.status}');
     }
   }
 
@@ -69,8 +77,9 @@ class _MessageStatusIndicatorState extends State<MessageStatusIndicator>
 
   @override
   Widget build(BuildContext context) {
-    final Color iconColor =
-        widget.color ?? Colors.white.withAlpha(179); // 0.7 opacity
+    // Use a more visible default color - white with higher opacity for better contrast
+    final Color iconColor = widget.color ??
+        Colors.white.withAlpha(230); // 0.9 opacity for better visibility
 
     switch (widget.status) {
       case MessageStatus.sending:

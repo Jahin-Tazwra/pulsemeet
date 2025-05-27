@@ -15,6 +15,7 @@ import 'services/database_initialization_service.dart';
 import 'services/encryption_service.dart';
 import 'services/key_management_service.dart';
 import 'services/encrypted_message_service.dart';
+import 'services/optimistic_ui_service.dart';
 import 'screens/splash_screen.dart';
 import 'screens/auth/auth_screen.dart';
 import 'screens/home/home_screen.dart';
@@ -36,6 +37,8 @@ void main() async {
 
   // Load environment variables
   await EnvConfig.initialize();
+  debugPrint('Environment variables loaded successfully');
+  debugPrint('🚀 Main function started - about to initialize services...');
 
   // Debug: Print Google Maps API key
   debugPrint('Google Maps API Key: ${EnvConfig.googleMapsApiKey}');
@@ -51,6 +54,12 @@ void main() async {
   final encryptionService = EncryptionService();
   final keyManagementService = KeyManagementService();
   final encryptedMessageService = EncryptedMessageService();
+
+  // Initialize OptimisticUIService early to set up status subscription
+  debugPrint('🔧 About to initialize OptimisticUIService...');
+  final optimisticUIService = OptimisticUIService.instance;
+  debugPrint(
+      '✅ OptimisticUIService initialized during app startup: $optimisticUIService');
 
   // Initialize database schema with timeout
   try {

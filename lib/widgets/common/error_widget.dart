@@ -101,7 +101,7 @@ class CompactErrorWidget extends StatelessWidget {
           size: 16,
         ),
         const SizedBox(width: 8),
-        Flexible(
+        Expanded(
           child: Text(
             message,
             style: theme.textTheme.bodySmall?.copyWith(

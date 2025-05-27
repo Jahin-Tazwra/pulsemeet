@@ -4,8 +4,6 @@ import 'package:flutter/services.dart';
 import 'package:pulsemeet/models/conversation.dart';
 import 'package:pulsemeet/models/message.dart';
 import 'package:pulsemeet/widgets/chat/message_widgets/message_bubble.dart';
-import 'package:pulsemeet/widgets/chat/message_widgets/date_separator.dart';
-import 'package:pulsemeet/widgets/common/loading_indicator.dart';
 
 /// Widget for displaying a list of messages with proper grouping and styling
 class MessageList extends StatefulWidget {
@@ -31,8 +29,6 @@ class MessageList extends StatefulWidget {
 }
 
 class _MessageListState extends State<MessageList> {
-  final Map<String, GlobalKey> _messageKeys = {};
-
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -45,126 +41,52 @@ class _MessageListState extends State<MessageList> {
       child: ListView.builder(
         controller: widget.scrollController,
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 16),
-        itemCount: _getItemCount(),
-        itemBuilder: (context, index) => _buildItem(context, index),
-        reverse: false, // Messages are ordered chronologically
-      ),
-    );
-  }
+        itemCount: widget.messages.length + (widget.isLoadingMore ? 1 : 0),
+        itemBuilder: (context, index) {
+          // Show loading indicator at the bottom when loading more messages
+          if (index == widget.messages.length) {
+            debugPrint(
+                '🔄 PAGINATION DEBUG: Showing loading indicator at bottom - isLoadingMore=${widget.isLoadingMore}');
+            return const Padding(
+              padding: EdgeInsets.all(16.0),
+              child: Center(
+                child: CircularProgressIndicator(),
+              ),
+            );
+          }
+          final message = widget.messages[index];
+          final isFromCurrentUser = message.senderId == widget.currentUserId;
 
-  /// Get total item count including loading indicator and date separators
-  int _getItemCount() {
-    int count = 0;
-    
-    // Loading more indicator at top
-    if (widget.isLoadingMore) count++;
-    
-    // Messages with date separators
-    for (int i = 0; i < widget.messages.length; i++) {
-      // Add date separator if needed
-      if (_shouldShowDateSeparator(i)) count++;
-      
-      // Add message
-      count++;
-    }
-    
-    return count;
-  }
+          // Determine message grouping
+          final isFirstInGroup = _isFirstInGroup(index);
+          final isLastInGroup = _isLastInGroup(index);
 
-  /// Build item at index
-  Widget _buildItem(BuildContext context, int index) {
-    int currentIndex = index;
-    
-    // Loading more indicator at top
-    if (widget.isLoadingMore) {
-      if (currentIndex == 0) {
-        return const Padding(
-          padding: EdgeInsets.all(16),
-          child: Center(child: LoadingIndicator()),
-        );
-      }
-      currentIndex--;
-    }
-    
-    // Find the actual message index accounting for date separators
-    int messageIndex = 0;
-    int itemsSeen = 0;
-    
-    for (int i = 0; i < widget.messages.length; i++) {
-      // Check if we need a date separator
-      if (_shouldShowDateSeparator(i)) {
-        if (itemsSeen == currentIndex) {
-          return DateSeparator(date: widget.messages[i].createdAt);
-        }
-        itemsSeen++;
-      }
-      
-      // Check if this is the message we want
-      if (itemsSeen == currentIndex) {
-        messageIndex = i;
-        break;
-      }
-      itemsSeen++;
-    }
-    
-    // Build message bubble
-    return _buildMessageBubble(messageIndex);
-  }
+          // CRITICAL FIX: Create key that changes when message status changes
+          // This ensures MessageBubble rebuilds when status updates occur
+          final messageKey =
+              ValueKey('${message.id}_${message.status.toString()}');
 
-  /// Check if we should show a date separator before this message
-  bool _shouldShowDateSeparator(int index) {
-    if (index == 0) return true; // Always show date for first message
-    
-    final currentMessage = widget.messages[index];
-    final previousMessage = widget.messages[index - 1];
-    
-    // Show separator if messages are on different days
-    final currentDate = DateTime(
-      currentMessage.createdAt.year,
-      currentMessage.createdAt.month,
-      currentMessage.createdAt.day,
-    );
-    final previousDate = DateTime(
-      previousMessage.createdAt.year,
-      previousMessage.createdAt.month,
-      previousMessage.createdAt.day,
-    );
-    
-    return currentDate != previousDate;
-  }
-
-  /// Build message bubble with proper grouping
-  Widget _buildMessageBubble(int index) {
-    final message = widget.messages[index];
-    final isFromCurrentUser = message.senderId == widget.currentUserId;
-    
-    // Determine message grouping
-    final isFirstInGroup = _isFirstInGroup(index);
-    final isLastInGroup = _isLastInGroup(index);
-    
-    // Create unique key for message
-    final messageKey = _messageKeys.putIfAbsent(
-      message.id,
-      () => GlobalKey(),
-    );
-
-    return Padding(
-      padding: EdgeInsets.only(
-        top: isFirstInGroup ? 8 : 2,
-        bottom: isLastInGroup ? 8 : 2,
-      ),
-      child: MessageBubble(
-        key: messageKey,
-        message: message,
-        conversation: widget.conversation,
-        isFromCurrentUser: isFromCurrentUser,
-        isFirstInGroup: isFirstInGroup,
-        isLastInGroup: isLastInGroup,
-        onReply: (message) => _handleReply(message),
-        onReact: (message, emoji) => _handleReaction(message, emoji),
-        onDelete: (message) => _handleDelete(message),
-        onForward: (message) => _handleForward(message),
-        onLongPress: (message) => _showMessageOptions(message),
+          return Padding(
+            padding: EdgeInsets.only(
+              top: isFirstInGroup ? 8 : 2,
+              bottom: isLastInGroup ? 8 : 2,
+            ),
+            child: MessageBubble(
+              key: messageKey,
+              message: message,
+              conversation: widget.conversation,
+              isFromCurrentUser: isFromCurrentUser,
+              isFirstInGroup: isFirstInGroup,
+              isLastInGroup: isLastInGroup,
+              onReply: (message) => _handleReply(message),
+              onReact: (message, emoji) => _handleReaction(message, emoji),
+              onDelete: (message) => _handleDelete(message),
+              onForward: (message) => _handleForward(message),
+              onLongPress: (message) => _showMessageOptions(message),
+            ),
+          );
+        },
+        reverse: false, // Keep normal ListView order
       ),
     );
   }
@@ -172,40 +94,41 @@ class _MessageListState extends State<MessageList> {
   /// Check if message is first in a group (same sender)
   bool _isFirstInGroup(int index) {
     if (index == 0) return true;
-    
+
     final currentMessage = widget.messages[index];
     final previousMessage = widget.messages[index - 1];
-    
+
     // Different sender
     if (currentMessage.senderId != previousMessage.senderId) return true;
-    
+
     // More than 5 minutes apart
-    final timeDiff = currentMessage.createdAt.difference(previousMessage.createdAt);
+    final timeDiff =
+        currentMessage.createdAt.difference(previousMessage.createdAt);
     if (timeDiff.inMinutes > 5) return true;
-    
+
     // Different message type
     if (currentMessage.messageType != previousMessage.messageType) return true;
-    
+
     return false;
   }
 
   /// Check if message is last in a group (same sender)
   bool _isLastInGroup(int index) {
     if (index == widget.messages.length - 1) return true;
-    
+
     final currentMessage = widget.messages[index];
     final nextMessage = widget.messages[index + 1];
-    
+
     // Different sender
     if (currentMessage.senderId != nextMessage.senderId) return true;
-    
+
     // More than 5 minutes apart
     final timeDiff = nextMessage.createdAt.difference(currentMessage.createdAt);
     if (timeDiff.inMinutes > 5) return true;
-    
+
     // Different message type
     if (currentMessage.messageType != nextMessage.messageType) return true;
-    
+
     return false;
   }
 
@@ -257,7 +180,7 @@ class _MessageListState extends State<MessageList> {
   /// Show message options bottom sheet
   void _showMessageOptions(Message message) {
     final isFromCurrentUser = message.senderId == widget.currentUserId;
-    
+
     showModalBottomSheet(
       context: context,
       shape: const RoundedRectangleBorder(
@@ -277,7 +200,7 @@ class _MessageListState extends State<MessageList> {
               ),
             ),
             const SizedBox(height: 20),
-            
+
             // Reply option
             ListTile(
               leading: const Icon(Icons.reply),
@@ -287,7 +210,7 @@ class _MessageListState extends State<MessageList> {
                 _handleReply(message);
               },
             ),
-            
+
             // Copy text option (for text messages)
             if (message.messageType == MessageType.text)
               ListTile(
@@ -301,7 +224,7 @@ class _MessageListState extends State<MessageList> {
                   );
                 },
               ),
-            
+
             // Forward option
             ListTile(
               leading: const Icon(Icons.forward),
@@ -311,18 +234,19 @@ class _MessageListState extends State<MessageList> {
                 _handleForward(message);
               },
             ),
-            
+
             // Delete option (only for own messages)
             if (isFromCurrentUser)
               ListTile(
                 leading: const Icon(Icons.delete, color: Colors.red),
-                title: const Text('Delete', style: TextStyle(color: Colors.red)),
+                title:
+                    const Text('Delete', style: TextStyle(color: Colors.red)),
                 onTap: () {
                   Navigator.pop(context);
                   _handleDelete(message);
                 },
               ),
-            
+
             const SizedBox(height: 20),
           ],
         ),

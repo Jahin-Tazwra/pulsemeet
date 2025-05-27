@@ -19,18 +19,28 @@ class Conversation {
   final ConversationType type;
   final String? title;
   final String? description;
+  @JsonKey(name: 'avatar_url')
   final String? avatarUrl;
+  @JsonKey(name: 'pulse_id')
   final String? pulseId; // Only for pulse groups
+  @JsonKey(name: 'created_by')
   final String? createdBy;
+  @JsonKey(name: 'created_at')
   final DateTime createdAt;
+  @JsonKey(name: 'updated_at')
   final DateTime updatedAt;
+  @JsonKey(name: 'last_message_at')
   final DateTime? lastMessageAt;
+  @JsonKey(name: 'is_archived')
   final bool isArchived;
+  @JsonKey(name: 'is_muted')
   final bool isMuted;
   final Map<String, dynamic> settings;
+  @JsonKey(name: 'encryption_enabled')
   final bool encryptionEnabled;
+  @JsonKey(name: 'encryption_key_id')
   final String? encryptionKeyId;
-  
+
   // Runtime properties (not stored in DB)
   final int? unreadCount;
   final String? lastMessagePreview;
@@ -115,9 +125,12 @@ class Conversation {
         return 'Pulse Chat';
       case ConversationType.directMessage:
         if (participants != null && participants!.isNotEmpty) {
-          final otherParticipant = participants!
-              .firstWhere((p) => p.userId != currentUserId, orElse: () => participants!.first);
-          return otherParticipant.displayName ?? otherParticipant.username ?? 'Unknown User';
+          final otherParticipant = participants!.firstWhere(
+              (p) => p.userId != currentUserId,
+              orElse: () => participants!.first);
+          return otherParticipant.displayName ??
+              otherParticipant.username ??
+              'Unknown User';
         }
         return 'Direct Message';
       case ConversationType.groupChat:
@@ -131,9 +144,12 @@ class Conversation {
       return avatarUrl;
     }
 
-    if (type == ConversationType.directMessage && participants != null && participants!.isNotEmpty) {
-      final otherParticipant = participants!
-          .firstWhere((p) => p.userId != currentUserId, orElse: () => participants!.first);
+    if (type == ConversationType.directMessage &&
+        participants != null &&
+        participants!.isNotEmpty) {
+      final otherParticipant = participants!.firstWhere(
+          (p) => p.userId != currentUserId,
+          orElse: () => participants!.first);
       return otherParticipant.avatarUrl;
     }
 
@@ -161,7 +177,7 @@ class ConversationParticipant {
   final DateTime? lastReadAt;
   final bool isMuted;
   final Map<String, dynamic> notificationSettings;
-  
+
   // User profile data (joined from profiles table)
   final String? username;
   final String? displayName;

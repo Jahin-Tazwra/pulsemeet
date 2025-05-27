@@ -183,6 +183,8 @@ class _UnifiedMessageInputState extends State<UnifiedMessageInput> {
     final text = _textController.text.trim();
     if (text.isEmpty || _isSending) return;
 
+    debugPrint(
+        '🔄 INPUT DEBUG: Starting to send message, setting _isSending = true');
     setState(() {
       _isSending = true;
     });
@@ -194,12 +196,17 @@ class _UnifiedMessageInputState extends State<UnifiedMessageInput> {
       // Clear typing status
       _isTyping = false;
       widget.onTypingChanged(false);
+      debugPrint(
+          '✅ INPUT DEBUG: Message sent successfully, setting _isSending = false');
     } catch (e) {
       debugPrint('❌ Error sending message: $e');
+      debugPrint('❌ INPUT DEBUG: Error occurred, setting _isSending = false');
     } finally {
       setState(() {
         _isSending = false;
       });
+      debugPrint(
+          '🔄 INPUT DEBUG: Finally block executed, _isSending should be false');
     }
   }
 
@@ -381,84 +388,142 @@ class _UnifiedMessageInputState extends State<UnifiedMessageInput> {
             onMentionSelected: _selectMention,
           ),
 
-        // Input area
+        // Input area with improved dark mode styling
         Container(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
           decoration: BoxDecoration(
-            color: isDark ? const Color(0xFF212121) : Colors.white,
+            color: isDark ? const Color(0xFF1E1E1E) : const Color(0xFFFAFAFA),
             border: Border(
               top: BorderSide(
-                color: isDark ? Colors.grey[800]! : Colors.grey[200]!,
-                width: 0.5,
+                color:
+                    isDark ? const Color(0xFF404040) : const Color(0xFFE0E0E0),
+                width: 1,
               ),
             ),
+            boxShadow: [
+              BoxShadow(
+                color: isDark
+                    ? Colors.black.withOpacity(0.12)
+                    : Colors.black.withOpacity(0.05),
+                blurRadius: isDark ? 3 : 4,
+                offset: const Offset(0, -1),
+              ),
+            ],
           ),
-          child: SafeArea(
-            child: Row(
-              children: [
-                // Attachment button
-                IconButton(
+          child: Row(
+            children: [
+              // Attachment button with improved dark mode styling
+              Container(
+                margin: const EdgeInsets.only(right: 8),
+                decoration: BoxDecoration(
+                  color: isDark
+                      ? const Color(0xFF404040)
+                      : const Color(0xFFF0F0F0),
+                  shape: BoxShape.circle,
+                  border: isDark
+                      ? Border.all(
+                          color: const Color(0xFF555555),
+                          width: 1,
+                        )
+                      : null,
+                ),
+                child: IconButton(
                   icon: const Icon(Icons.add),
                   onPressed: _showMediaPicker,
-                  color: isDark ? Colors.grey[400] : Colors.grey[600],
+                  color: isDark ? Colors.grey[200] : Colors.grey[700],
+                  iconSize: 22,
                 ),
+              ),
 
-                // Text input
-                Expanded(
-                  child: Container(
-                    constraints: const BoxConstraints(maxHeight: 120),
-                    decoration: BoxDecoration(
-                      color: isDark
-                          ? const Color(0xFF2C2C2C)
-                          : const Color(0xFFF0F0F0),
-                      borderRadius: BorderRadius.circular(20),
+              // Text input with clean single border
+              Expanded(
+                child: TextField(
+                  controller: _textController,
+                  focusNode: _focusNode,
+                  maxLines: null,
+                  textCapitalization: TextCapitalization.sentences,
+                  decoration: InputDecoration(
+                    hintText: 'Type a message...',
+                    hintStyle: TextStyle(
+                      color: isDark ? Colors.grey[500] : Colors.grey[500],
+                      fontSize: 16,
                     ),
-                    child: TextField(
-                      controller: _textController,
-                      focusNode: _focusNode,
-                      maxLines: null,
-                      textCapitalization: TextCapitalization.sentences,
-                      decoration: InputDecoration(
-                        hintText: 'Type a message...',
-                        hintStyle: TextStyle(
-                          color: isDark ? Colors.grey[500] : Colors.grey[600],
-                        ),
-                        border: InputBorder.none,
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 10,
-                        ),
+                    filled: true,
+                    fillColor: isDark ? const Color(0xFF3A3A3A) : Colors.white,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(24),
+                      borderSide: BorderSide(
+                        color: isDark
+                            ? const Color(0xFF555555)
+                            : const Color(0xFFE0E0E0),
+                        width: 1,
                       ),
-                      style: TextStyle(
-                        color: isDark ? Colors.white : Colors.black,
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(24),
+                      borderSide: BorderSide(
+                        color: isDark
+                            ? const Color(0xFF555555)
+                            : const Color(0xFFE0E0E0),
+                        width: 1,
                       ),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(24),
+                      borderSide: BorderSide(
+                        color: isDark
+                            ? const Color(0xFF1E88E5)
+                            : Theme.of(context).primaryColor,
+                        width: 2,
+                      ),
+                    ),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 18,
+                      vertical: 12,
                     ),
                   ),
+                  style: TextStyle(
+                    color: isDark ? Colors.white : Colors.black87,
+                    fontSize: 16,
+                    height: 1.4,
+                  ),
                 ),
+              ),
 
-                const SizedBox(width: 8),
+              const SizedBox(width: 8),
 
-                // Send/Voice button
-                _buildSendButton(isDark),
-              ],
-            ),
+              // Send/Voice button
+              _buildSendButton(isDark),
+            ],
           ),
         ),
       ],
     );
   }
 
-  /// Build send button (changes based on input state)
+  /// Build send button with improved styling (changes based on input state)
   Widget _buildSendButton(bool isDark) {
     final hasText = _textController.text.trim().isNotEmpty;
 
     if (_isSending) {
+      debugPrint(
+          '🔄 INPUT DEBUG: Showing loading indicator because _isSending = true');
       return Container(
-        width: 40,
-        height: 40,
+        width: 44,
+        height: 44,
         decoration: BoxDecoration(
-          color: Theme.of(context).primaryColor,
+          color:
+              isDark ? const Color(0xFF1E88E5) : Theme.of(context).primaryColor,
           shape: BoxShape.circle,
+          boxShadow: [
+            BoxShadow(
+              color: isDark
+                  ? Colors.black.withOpacity(0.3)
+                  : Colors.black.withOpacity(0.1),
+              blurRadius: 4,
+              offset: const Offset(0, 2),
+            ),
+          ],
         ),
         child: const Center(
           child: SizedBox(
@@ -474,46 +539,71 @@ class _UnifiedMessageInputState extends State<UnifiedMessageInput> {
     }
 
     if (hasText) {
-      // Send button
+      // Send button with enhanced styling
       return Material(
         color: Colors.transparent,
         child: InkWell(
           onTap: _isSending ? null : _sendTextMessage,
-          borderRadius: BorderRadius.circular(20),
+          borderRadius: BorderRadius.circular(22),
           child: Container(
-            width: 40,
-            height: 40,
+            width: 44,
+            height: 44,
             decoration: BoxDecoration(
-              color: Theme.of(context).primaryColor,
+              color: isDark
+                  ? const Color(0xFF1E88E5)
+                  : Theme.of(context).primaryColor,
               shape: BoxShape.circle,
+              boxShadow: [
+                BoxShadow(
+                  color: isDark
+                      ? Colors.black.withOpacity(0.3)
+                      : Colors.black.withOpacity(0.1),
+                  blurRadius: 4,
+                  offset: const Offset(0, 2),
+                ),
+              ],
             ),
             child: const Icon(
               Icons.send,
               color: Colors.white,
-              size: 20,
+              size: 22,
               semanticLabel: 'Send message',
             ),
           ),
         ),
       );
     } else {
-      // Voice button
+      // Voice button with enhanced dark mode styling
       return Material(
         color: Colors.transparent,
         child: InkWell(
           onTap: _startVoiceRecording,
-          borderRadius: BorderRadius.circular(20),
+          borderRadius: BorderRadius.circular(22),
           child: Container(
-            width: 40,
-            height: 40,
+            width: 44,
+            height: 44,
             decoration: BoxDecoration(
-              color: isDark ? Colors.grey[700] : Colors.grey[300],
+              color: isDark ? const Color(0xFF404040) : const Color(0xFFF0F0F0),
               shape: BoxShape.circle,
+              border: Border.all(
+                color:
+                    isDark ? const Color(0xFF555555) : const Color(0xFFE0E0E0),
+                width: 1,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: isDark
+                      ? Colors.black.withOpacity(0.3)
+                      : Colors.black.withOpacity(0.05),
+                  blurRadius: isDark ? 3 : 2,
+                  offset: const Offset(0, 1),
+                ),
+              ],
             ),
             child: Icon(
               Icons.mic,
-              color: isDark ? Colors.grey[300] : Colors.grey[700],
-              size: 20,
+              color: isDark ? Colors.grey[200] : Colors.grey[600],
+              size: 22,
               semanticLabel: 'Record voice message',
             ),
           ),
