@@ -8,15 +8,21 @@ import 'package:provider/provider.dart';
 class UserAvatar extends StatefulWidget {
   final String userId;
   final String? avatarUrl;
+  final String? displayName; // Add display name for fallback
+  final String? username; // Add username for fallback
   final double size;
   final VoidCallback? onTap;
+  final bool skipProfileLoad; // Skip database call if we have all needed data
 
   const UserAvatar({
     super.key,
     required this.userId,
     this.avatarUrl,
+    this.displayName,
+    this.username,
     this.size = 40,
     this.onTap,
+    this.skipProfileLoad = false,
   });
 
   @override
@@ -27,6 +33,9 @@ class _UserAvatarState extends State<UserAvatar> {
   Profile? _profile;
   bool _isLoading = true;
 
+  // Static cache for profile data to avoid repeated database calls
+  static final Map<String, Profile?> _profileCache = {};
+
   @override
   void initState() {
     super.initState();
@@ -34,18 +43,39 @@ class _UserAvatarState extends State<UserAvatar> {
   }
 
   Future<void> _loadProfile() async {
-    if (widget.avatarUrl != null) {
-      // If avatar URL is provided, we don't need to load the profile
+    // OPTIMIZATION: If we have all needed data, don't make database call
+    if (widget.avatarUrl != null &&
+        (widget.displayName != null || widget.username != null)) {
       setState(() {
         _isLoading = false;
       });
       return;
     }
 
+    // FALLBACK: If skipProfileLoad is true but we don't have avatar URL, still load profile
+    // This handles cases where older messages don't have avatar URLs stored
+    if (widget.skipProfileLoad && widget.avatarUrl == null) {
+      debugPrint(
+          '🔄 UserAvatar: skipProfileLoad=true but avatarUrl=null, loading profile as fallback');
+    }
+
+    // OPTIMIZATION: Check cache first
+    if (_profileCache.containsKey(widget.userId)) {
+      setState(() {
+        _profile = _profileCache[widget.userId];
+        _isLoading = false;
+      });
+      return;
+    }
+
     try {
-      final supabaseService = Provider.of<SupabaseService>(context, listen: false);
+      final supabaseService =
+          Provider.of<SupabaseService>(context, listen: false);
       final profile = await supabaseService.getProfile(widget.userId);
-      
+
+      // Cache the result
+      _profileCache[widget.userId] = profile;
+
       if (mounted) {
         setState(() {
           _profile = profile;
@@ -53,6 +83,9 @@ class _UserAvatarState extends State<UserAvatar> {
         });
       }
     } catch (e) {
+      // Cache null result to avoid repeated failed calls
+      _profileCache[widget.userId] = null;
+
       if (mounted) {
         setState(() {
           _isLoading = false;
@@ -68,9 +101,7 @@ class _UserAvatarState extends State<UserAvatar> {
       child: SizedBox(
         width: widget.size,
         height: widget.size,
-        child: _isLoading
-            ? _buildLoadingAvatar()
-            : _buildAvatar(),
+        child: _isLoading ? _buildLoadingAvatar() : _buildAvatar(),
       ),
     );
   }
@@ -93,7 +124,7 @@ class _UserAvatarState extends State<UserAvatar> {
   Widget _buildAvatar() {
     // Use provided avatar URL or get it from the profile
     final avatarUrl = widget.avatarUrl ?? _profile?.avatarUrl;
-    
+
     if (avatarUrl != null && avatarUrl.isNotEmpty) {
       return CircleAvatar(
         radius: widget.size / 2,
@@ -122,13 +153,19 @@ class _UserAvatarState extends State<UserAvatar> {
   }
 
   Widget _buildFallbackAvatar() {
-    // Get initial from profile or use a fallback
-    final String initial = _profile?.displayName?.isNotEmpty == true
-        ? _profile!.displayName![0].toUpperCase()
-        : (_profile?.username?.isNotEmpty == true
-            ? _profile!.username![0].toUpperCase()
-            : '?');
-    
+    // OPTIMIZATION: Use provided display name/username first, then profile, then fallback
+    String initial = '?';
+
+    if (widget.displayName?.isNotEmpty == true) {
+      initial = widget.displayName![0].toUpperCase();
+    } else if (widget.username?.isNotEmpty == true) {
+      initial = widget.username![0].toUpperCase();
+    } else if (_profile?.displayName?.isNotEmpty == true) {
+      initial = _profile!.displayName![0].toUpperCase();
+    } else if (_profile?.username?.isNotEmpty == true) {
+      initial = _profile!.username![0].toUpperCase();
+    }
+
     return CircleAvatar(
       radius: widget.size / 2,
       backgroundColor: Theme.of(context).colorScheme.primary,

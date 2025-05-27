@@ -69,6 +69,11 @@ dependencies:
   share_plus: ^7.2.1
   mime: ^1.0.4
 
+  # Firebase & Push Notifications
+  firebase_core: ^2.24.2
+  firebase_messaging: ^14.7.10
+  firebase_analytics: ^10.7.4
+
   # Encryption & Security
   flutter_secure_storage: ^9.0.0
   crypto: ^3.0.3

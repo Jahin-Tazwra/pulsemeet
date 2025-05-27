@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PulseMeet Notification Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .form-group {
+            margin-bottom: 20px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+            color: #333;
+        }
+        input, textarea {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-size: 14px;
+        }
+        button {
+            background-color: #1E88E5;
+            color: white;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            margin-right: 10px;
+        }
+        button:hover {
+            background-color: #1976D2;
+        }
+        .result {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 5px;
+            white-space: pre-wrap;
+            font-family: monospace;
+        }
+        .success {
+            background-color: #e8f5e8;
+            border: 1px solid #4caf50;
+            color: #2e7d32;
+        }
+        .error {
+            background-color: #ffebee;
+            border: 1px solid #f44336;
+            color: #c62828;
+        }
+        .info {
+            background-color: #e3f2fd;
+            border: 1px solid #2196f3;
+            color: #1565c0;
+        }
+        h1 {
+            color: #1E88E5;
+            text-align: center;
+        }
+        .note {
+            background-color: #fff3e0;
+            border: 1px solid #ff9800;
+            color: #e65100;
+            padding: 10px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔔 PulseMeet Notification Test</h1>
+        
+        <div class="note">
+            <strong>Note:</strong> You need to be authenticated in your app and have a valid FCM token to test push notifications.
+        </div>
+
+        <form id="notificationForm">
+            <div class="form-group">
+                <label for="supabaseUrl">Supabase URL:</label>
+                <input type="text" id="supabaseUrl" value="https://iswssbedsqvidbafaucj.supabase.co" required>
+            </div>
+
+            <div class="form-group">
+                <label for="anonKey">Supabase Anon Key:</label>
+                <input type="text" id="anonKey" placeholder="Your Supabase anonymous key" required>
+            </div>
+
+            <div class="form-group">
+                <label for="authToken">Auth Token (Bearer token from your app):</label>
+                <input type="text" id="authToken" placeholder="Bearer eyJ..." required>
+            </div>
+
+            <div class="form-group">
+                <label for="deviceToken">Device Token (FCM token from your app):</label>
+                <input type="text" id="deviceToken" placeholder="FCM device token" required>
+            </div>
+
+            <div class="form-group">
+                <label for="title">Notification Title:</label>
+                <input type="text" id="title" value="PulseMeet Test" required>
+            </div>
+
+            <div class="form-group">
+                <label for="body">Notification Body:</label>
+                <textarea id="body" rows="3" required>This is a test notification from PulseMeet! 🎉</textarea>
+            </div>
+
+            <button type="submit">Send Test Notification</button>
+            <button type="button" onclick="fillSampleData()">Fill Sample Data</button>
+            <button type="button" onclick="clearForm()">Clear Form</button>
+        </form>
+
+        <div id="result"></div>
+    </div>
+
+    <script>
+        document.getElementById('notificationForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const resultDiv = document.getElementById('result');
+            resultDiv.innerHTML = '<div class="info">Sending notification...</div>';
+            
+            const supabaseUrl = document.getElementById('supabaseUrl').value;
+            const anonKey = document.getElementById('anonKey').value;
+            const authToken = document.getElementById('authToken').value;
+            const deviceToken = document.getElementById('deviceToken').value;
+            const title = document.getElementById('title').value;
+            const body = document.getElementById('body').value;
+            
+            try {
+                const response = await fetch(`${supabaseUrl}/functions/v1/send-push-notification-simple`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': authToken,
+                        'apikey': anonKey,
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        device_token: deviceToken,
+                        title: title,
+                        body: body,
+                        data: {
+                            test: true,
+                            timestamp: new Date().toISOString()
+                        }
+                    })
+                });
+                
+                const result = await response.json();
+                
+                if (response.ok) {
+                    resultDiv.innerHTML = `<div class="success">✅ Success!\n\nResponse: ${JSON.stringify(result, null, 2)}</div>`;
+                } else {
+                    resultDiv.innerHTML = `<div class="error">❌ Error!\n\nStatus: ${response.status}\nResponse: ${JSON.stringify(result, null, 2)}</div>`;
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `<div class="error">❌ Network Error!\n\n${error.message}</div>`;
+            }
+        });
+        
+        function fillSampleData() {
+            document.getElementById('deviceToken').value = 'test-token-' + Date.now();
+            document.getElementById('title').value = 'PulseMeet Test';
+            document.getElementById('body').value = 'This is a test notification! 🚀';
+        }
+        
+        function clearForm() {
+            document.getElementById('notificationForm').reset();
+            document.getElementById('result').innerHTML = '';
+        }
+    </script>
+</body>
+</html>

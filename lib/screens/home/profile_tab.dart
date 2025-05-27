@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart' hide ThemeMode;
+import 'package:flutter/foundation.dart';
 import 'package:provider/provider.dart';
 import 'package:pulsemeet/services/supabase_service.dart';
 import 'package:pulsemeet/models/profile.dart';
 import 'package:pulsemeet/screens/profile/edit_profile_screen.dart';
 import 'package:pulsemeet/screens/profile/ratings_screen.dart';
+import 'package:pulsemeet/screens/debug/notification_test_screen.dart';
 import 'package:pulsemeet/widgets/profile/profile_header.dart';
 import 'package:pulsemeet/widgets/profile/profile_info_section.dart';
 import 'package:pulsemeet/widgets/profile/profile_rating_section.dart';
@@ -360,8 +362,23 @@ class _ProfileTabState extends State<ProfileTab> {
                   onTap: () {
                     // Navigate to about screen
                   },
-                  showDivider: false,
                 ),
+                // Show debug option only in debug mode
+                if (kDebugMode)
+                  SettingsItem(
+                    title: 'Notification Test',
+                    subtitle: 'Test push notification system',
+                    icon: Icons.bug_report,
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => const NotificationTestScreen(),
+                        ),
+                      );
+                    },
+                    showDivider: false,
+                  ),
               ],
             ),
 

@@ -11,6 +11,7 @@ import '../config/supabase_config.dart';
 import '../models/pulse.dart';
 import '../models/profile.dart';
 import '../models/message.dart';
+import 'conversation_service.dart';
 
 /// Service class for interacting with Supabase
 class SupabaseService {
@@ -69,6 +70,19 @@ class SupabaseService {
 
         // Check if profile exists and create if needed
         _ensureUserProfile(user);
+
+        // CRITICAL: Ensure ConversationService real-time detection is set up after authentication
+        try {
+          debugPrint(
+              '🔧 Setting up ConversationService real-time detection after authentication...');
+          final conversationService = ConversationService();
+          conversationService.ensureRealTimeDetection();
+          debugPrint(
+              '✅ ConversationService real-time detection setup completed');
+        } catch (e) {
+          debugPrint(
+              '❌ Error setting up ConversationService real-time detection: $e');
+        }
       }
 
       controller.add(isAuthenticated);

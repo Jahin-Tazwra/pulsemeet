@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:app_links/app_links.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -11,11 +12,14 @@ import 'config/supabase_config.dart';
 import 'services/supabase_service.dart';
 import 'services/pulse_notifier.dart';
 import 'services/notification_service.dart';
+import 'services/firebase_messaging_service.dart';
 import 'services/database_initialization_service.dart';
 import 'services/encryption_service.dart';
 import 'services/key_management_service.dart';
 import 'services/encrypted_message_service.dart';
 import 'services/optimistic_ui_service.dart';
+import 'services/conversation_service.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'screens/splash_screen.dart';
 import 'screens/auth/auth_screen.dart';
 import 'screens/home/home_screen.dart';
@@ -35,6 +39,9 @@ final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
+  // Register Firebase background message handler
+  FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
+
   // Load environment variables
   await EnvConfig.initialize();
   debugPrint('Environment variables loaded successfully');
@@ -49,11 +56,46 @@ void main() async {
   // Create service instances to ensure they're initialized
   final pulseNotifier = PulseNotifier();
   final notificationService = NotificationService();
+  final firebaseMessagingService = FirebaseMessagingService();
 
   // Initialize encryption services
   final encryptionService = EncryptionService();
   final keyManagementService = KeyManagementService();
   final encryptedMessageService = EncryptedMessageService();
+
+  // Initialize Firebase messaging for push notifications
+  try {
+    debugPrint('🔥 Initializing Firebase messaging...');
+    await firebaseMessagingService.initialize();
+    debugPrint('✅ Firebase messaging initialized successfully');
+
+    // Test WhatsApp-style notifications after a delay (debug mode only)
+    if (kDebugMode) {
+      Future.delayed(const Duration(seconds: 5), () async {
+        debugPrint('🧪 Testing WhatsApp-style notification automatically...');
+        try {
+          await firebaseMessagingService.testWhatsAppStyleNotification();
+          debugPrint('✅ Automatic WhatsApp-style notification test completed');
+        } catch (e) {
+          debugPrint('❌ Automatic WhatsApp-style notification test failed: $e');
+        }
+      });
+    }
+  } catch (e) {
+    debugPrint('❌ Firebase messaging initialization failed: $e');
+    // Continue without push notifications if Firebase fails
+  }
+
+  // Initialize ConversationService early to ensure real-time detection is set up
+  try {
+    debugPrint('💬 Initializing ConversationService...');
+    final conversationService = ConversationService();
+    // The service will initialize itself automatically when accessed
+    debugPrint('✅ ConversationService initialized successfully');
+  } catch (e) {
+    debugPrint('❌ ConversationService initialization failed: $e');
+    // Continue without conversation service if it fails
+  }
 
   // Initialize OptimisticUIService early to set up status subscription
   debugPrint('🔧 About to initialize OptimisticUIService...');

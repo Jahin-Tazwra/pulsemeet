@@ -1,15 +1,15 @@
 // Java 11 is already configured in app/build.gradle.kts
 
-// Add Google Services classpath for Google Sign-In (temporarily disabled)
-// buildscript {
-//     repositories {
-//         google()
-//         mavenCentral()
-//     }
-//     dependencies {
-//         classpath("com.google.gms:google-services:4.4.0")
-//     }
-// }
+// Add Google Services classpath for Firebase
+buildscript {
+    repositories {
+        google()
+        mavenCentral()
+    }
+    dependencies {
+        classpath("com.google.gms:google-services:4.4.0")
+    }
+}
 
 allprojects {
     repositories {

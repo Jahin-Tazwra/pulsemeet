@@ -53,6 +53,9 @@ class DatabaseInitializationService {
       await _ensureRatingsTable(); // Add ratings table initialization
       await _ensurePulseSharingTable(); // Add pulse sharing features
       await _ensurePulseChatKeysTable(); // Add pulse chat encryption keys
+      await _ensureSecureKeyExchangeTables(); // Add secure key exchange support
+      await _ensureUserDevicesTable(); // Add user devices table for FCM tokens
+      await _ensurePendingNotificationsTable(); // Add pending notifications table
 
       // Check and configure storage buckets
       await _ensureStorageBuckets();
@@ -913,6 +916,348 @@ class DatabaseInitializationService {
           'Successfully created pulse_chat_keys table and related objects');
     } catch (e) {
       debugPrint('Error ensuring pulse_chat_keys table: $e');
+      // Continue with initialization even if this part fails
+    }
+  }
+
+  /// Ensure secure key exchange tables exist for true E2E encryption
+  Future<void> _ensureSecureKeyExchangeTables() async {
+    try {
+      debugPrint('Ensuring secure key exchange tables...');
+
+      // Create key exchange status table
+      await _executeSql('''
+      -- Create key exchange status table if it doesn't exist
+      CREATE TABLE IF NOT EXISTS key_exchange_status (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        user1_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+        user2_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+        conversation_id VARCHAR(255) NOT NULL,
+        conversation_type VARCHAR(20) NOT NULL CHECK (conversation_type IN ('direct', 'pulse')),
+        key_exchange_completed BOOLEAN DEFAULT false,
+        last_key_rotation TIMESTAMP WITH TIME ZONE,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+
+        -- Ensure unique key exchange per user pair per conversation
+        UNIQUE(user1_id, user2_id, conversation_id),
+
+        -- Ensure user1_id < user2_id for consistent ordering
+        CHECK (user1_id < user2_id)
+      );
+
+      -- Add indexes for performance
+      CREATE INDEX IF NOT EXISTS idx_key_exchange_status_users ON key_exchange_status(user1_id, user2_id);
+      CREATE INDEX IF NOT EXISTS idx_key_exchange_status_conversation ON key_exchange_status(conversation_id);
+      CREATE INDEX IF NOT EXISTS idx_key_exchange_status_completed ON key_exchange_status(key_exchange_completed);
+      ''');
+
+      // Create migration status table
+      await _executeSql('''
+      -- Create migration status table if it doesn't exist
+      CREATE TABLE IF NOT EXISTS e2e_migration_status (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        migration_name VARCHAR(100) NOT NULL UNIQUE,
+        started_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+        completed_at TIMESTAMP WITH TIME ZONE,
+        status VARCHAR(20) DEFAULT 'in_progress' CHECK (status IN ('in_progress', 'completed', 'failed')),
+        error_message TEXT,
+        affected_records INTEGER DEFAULT 0
+      );
+      ''');
+
+      // Add RLS policies
+      await _executeSql('''
+      -- Enable RLS on key exchange status table
+      ALTER TABLE key_exchange_status ENABLE ROW LEVEL SECURITY;
+
+      -- Policy to allow users to view their own key exchange status
+      DROP POLICY IF EXISTS "Users can view their own key exchange status" ON key_exchange_status;
+      CREATE POLICY "Users can view their own key exchange status" ON key_exchange_status
+      FOR SELECT TO authenticated
+      USING (auth.uid() = user1_id OR auth.uid() = user2_id);
+
+      -- Policy to allow users to create key exchange records
+      DROP POLICY IF EXISTS "Users can create key exchange records" ON key_exchange_status;
+      CREATE POLICY "Users can create key exchange records" ON key_exchange_status
+      FOR INSERT TO authenticated
+      WITH CHECK (auth.uid() = user1_id OR auth.uid() = user2_id);
+
+      -- Policy to allow users to update their key exchange status
+      DROP POLICY IF EXISTS "Users can update their key exchange status" ON key_exchange_status;
+      CREATE POLICY "Users can update their key exchange status" ON key_exchange_status
+      FOR UPDATE TO authenticated
+      USING (auth.uid() = user1_id OR auth.uid() = user2_id)
+      WITH CHECK (auth.uid() = user1_id OR auth.uid() = user2_id);
+
+      -- Enable RLS on migration status table (admin only)
+      ALTER TABLE e2e_migration_status ENABLE ROW LEVEL SECURITY;
+
+      -- Only allow authenticated users to read migration status
+      DROP POLICY IF EXISTS "Users can view migration status" ON e2e_migration_status;
+      CREATE POLICY "Users can view migration status" ON e2e_migration_status
+      FOR SELECT TO authenticated
+      USING (true);
+      ''');
+
+      // Update pulse_chat_keys table for secure key exchange
+      await _executeSql('''
+      -- Add secure key exchange columns to pulse_chat_keys if they don't exist
+      ALTER TABLE pulse_chat_keys
+      ADD COLUMN IF NOT EXISTS key_exchange_method VARCHAR(50) DEFAULT 'ECDH-HKDF-SHA256',
+      ADD COLUMN IF NOT EXISTS requires_key_derivation BOOLEAN DEFAULT true,
+      ADD COLUMN IF NOT EXISTS migration_completed BOOLEAN DEFAULT false;
+
+      -- Remove symmetric_key column if it still exists (migration safety)
+      ALTER TABLE pulse_chat_keys DROP COLUMN IF EXISTS symmetric_key;
+
+      -- Update existing records to use secure key derivation
+      UPDATE pulse_chat_keys
+      SET
+        requires_key_derivation = true,
+        migration_completed = true,
+        key_exchange_method = 'ECDH-HKDF-SHA256'
+      WHERE requires_key_derivation IS NULL;
+
+      -- Add comments explaining the security model
+      COMMENT ON TABLE pulse_chat_keys IS 'Pulse chat key metadata - symmetric keys derived locally using ECDH, never stored on server';
+      COMMENT ON COLUMN pulse_chat_keys.key_exchange_method IS 'Method used for key derivation (ECDH-HKDF-SHA256)';
+      COMMENT ON COLUMN pulse_chat_keys.requires_key_derivation IS 'True if keys must be derived locally';
+      COMMENT ON COLUMN pulse_chat_keys.migration_completed IS 'True if migrated to secure key exchange';
+      ''');
+
+      debugPrint('Successfully created secure key exchange tables');
+    } catch (e) {
+      debugPrint('Error ensuring secure key exchange tables: $e');
+      // Continue with initialization even if this part fails
+    }
+  }
+
+  /// Ensure user devices table exists for FCM tokens
+  Future<void> _ensureUserDevicesTable() async {
+    try {
+      // Check if the table exists by attempting to query it
+      try {
+        await _supabase.from('user_devices').select('id').limit(1);
+        debugPrint('user_devices table already exists');
+        return;
+      } catch (e) {
+        // Table doesn't exist, create it
+        debugPrint('Creating user_devices table...');
+      }
+
+      // Create the user_devices table
+      await _executeSql('''
+        -- Create user_devices table for FCM tokens
+        CREATE TABLE IF NOT EXISTS user_devices (
+          id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+          user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+          device_token TEXT NOT NULL,
+          device_type VARCHAR(20) NOT NULL CHECK (device_type IN ('ios', 'android', 'web')),
+          device_name VARCHAR(255),
+          app_version VARCHAR(50),
+          os_version VARCHAR(50),
+          is_active BOOLEAN NOT NULL DEFAULT true,
+          last_seen TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+          created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+          updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+          UNIQUE(user_id, device_token)
+        );
+
+        -- Add comment to table
+        COMMENT ON TABLE user_devices IS 'Stores user device information and FCM tokens for push notifications';
+
+        -- Add indexes for performance
+        CREATE INDEX IF NOT EXISTS idx_user_devices_user_id ON user_devices(user_id);
+        CREATE INDEX IF NOT EXISTS idx_user_devices_device_token ON user_devices(device_token);
+        CREATE INDEX IF NOT EXISTS idx_user_devices_is_active ON user_devices(is_active);
+        CREATE INDEX IF NOT EXISTS idx_user_devices_last_seen ON user_devices(last_seen);
+      ''');
+
+      // Create functions and triggers
+      await _executeSql('''
+        -- Create function to update user device timestamp
+        CREATE OR REPLACE FUNCTION update_user_device_timestamp()
+        RETURNS TRIGGER AS \$\$
+        BEGIN
+          NEW.updated_at = NOW();
+          NEW.last_seen = NOW();
+          RETURN NEW;
+        END;
+        \$\$ LANGUAGE plpgsql;
+
+        -- Create trigger to update timestamp on update
+        DROP TRIGGER IF EXISTS update_user_device_timestamp ON user_devices;
+        CREATE TRIGGER update_user_device_timestamp
+        BEFORE UPDATE ON user_devices
+        FOR EACH ROW EXECUTE FUNCTION update_user_device_timestamp();
+
+        -- Create function to clean up old inactive devices
+        CREATE OR REPLACE FUNCTION cleanup_inactive_devices()
+        RETURNS TRIGGER AS \$\$
+        BEGIN
+          -- Mark devices as inactive if not seen for 30 days
+          UPDATE user_devices
+          SET is_active = false
+          WHERE last_seen < NOW() - INTERVAL '30 days'
+          AND is_active = true;
+
+          -- Delete very old inactive devices (90 days)
+          DELETE FROM user_devices
+          WHERE last_seen < NOW() - INTERVAL '90 days'
+          AND is_active = false;
+
+          RETURN NULL;
+        END;
+        \$\$ LANGUAGE plpgsql;
+
+        -- Create trigger to clean up old devices
+        DROP TRIGGER IF EXISTS cleanup_inactive_devices_trigger ON user_devices;
+        CREATE TRIGGER cleanup_inactive_devices_trigger
+        AFTER INSERT OR UPDATE ON user_devices
+        FOR EACH STATEMENT EXECUTE FUNCTION cleanup_inactive_devices();
+      ''');
+
+      // Add RLS policies
+      await _executeSql('''
+        -- Add RLS policies for user_devices
+        ALTER TABLE user_devices ENABLE ROW LEVEL SECURITY;
+
+        -- Policy to allow users to view their own devices
+        DROP POLICY IF EXISTS "Users can view their own devices" ON user_devices;
+        CREATE POLICY "Users can view their own devices"
+        ON user_devices FOR SELECT
+        TO authenticated
+        USING (user_id = auth.uid());
+
+        -- Policy to allow users to insert their own devices
+        DROP POLICY IF EXISTS "Users can insert their own devices" ON user_devices;
+        CREATE POLICY "Users can insert their own devices"
+        ON user_devices FOR INSERT
+        TO authenticated
+        WITH CHECK (user_id = auth.uid());
+
+        -- Policy to allow users to update their own devices
+        DROP POLICY IF EXISTS "Users can update their own devices" ON user_devices;
+        CREATE POLICY "Users can update their own devices"
+        ON user_devices FOR UPDATE
+        TO authenticated
+        USING (user_id = auth.uid());
+
+        -- Policy to allow users to delete their own devices
+        DROP POLICY IF EXISTS "Users can delete their own devices" ON user_devices;
+        CREATE POLICY "Users can delete their own devices"
+        ON user_devices FOR DELETE
+        TO authenticated
+        USING (user_id = auth.uid());
+      ''');
+
+      debugPrint('Successfully created user_devices table and related objects');
+    } catch (e) {
+      debugPrint('Error ensuring user devices table: $e');
+      // Continue with initialization even if this part fails
+    }
+  }
+
+  /// Ensure pending notifications table exists for real-time notification delivery
+  Future<void> _ensurePendingNotificationsTable() async {
+    try {
+      // Check if the table exists by attempting to query it
+      try {
+        await _supabase.from('pending_notifications').select('id').limit(1);
+        debugPrint('pending_notifications table already exists');
+        return;
+      } catch (e) {
+        // Table doesn't exist, create it
+        debugPrint('Creating pending_notifications table...');
+      }
+
+      // Create the pending_notifications table
+      await _executeSql('''
+        -- Create pending_notifications table for real-time notification delivery
+        CREATE TABLE IF NOT EXISTS pending_notifications (
+          id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+          user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+          device_token TEXT NOT NULL,
+          title TEXT NOT NULL,
+          body TEXT NOT NULL,
+          data JSONB DEFAULT '{}',
+          device_type VARCHAR(20) DEFAULT 'unknown',
+          status VARCHAR(20) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'delivered', 'failed')),
+          created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+          delivered_at TIMESTAMP WITH TIME ZONE,
+          error_message TEXT
+        );
+
+        -- Add comment to table
+        COMMENT ON TABLE pending_notifications IS 'Stores pending push notifications for real-time delivery';
+
+        -- Add indexes for performance
+        CREATE INDEX IF NOT EXISTS idx_pending_notifications_user_id ON pending_notifications(user_id);
+        CREATE INDEX IF NOT EXISTS idx_pending_notifications_device_token ON pending_notifications(device_token);
+        CREATE INDEX IF NOT EXISTS idx_pending_notifications_status ON pending_notifications(status);
+        CREATE INDEX IF NOT EXISTS idx_pending_notifications_created_at ON pending_notifications(created_at);
+      ''');
+
+      // Create functions and triggers
+      await _executeSql('''
+        -- Create function to clean up old notifications
+        CREATE OR REPLACE FUNCTION cleanup_old_notifications()
+        RETURNS TRIGGER AS \$\$
+        BEGIN
+          -- Delete notifications older than 7 days
+          DELETE FROM pending_notifications
+          WHERE created_at < NOW() - INTERVAL '7 days';
+
+          RETURN NULL;
+        END;
+        \$\$ LANGUAGE plpgsql;
+
+        -- Create trigger to clean up old notifications
+        DROP TRIGGER IF EXISTS cleanup_old_notifications_trigger ON pending_notifications;
+        CREATE TRIGGER cleanup_old_notifications_trigger
+        AFTER INSERT ON pending_notifications
+        FOR EACH STATEMENT EXECUTE FUNCTION cleanup_old_notifications();
+      ''');
+
+      // Add RLS policies
+      await _executeSql('''
+        -- Add RLS policies for pending_notifications
+        ALTER TABLE pending_notifications ENABLE ROW LEVEL SECURITY;
+
+        -- Policy to allow users to view their own notifications
+        DROP POLICY IF EXISTS "Users can view their own notifications" ON pending_notifications;
+        CREATE POLICY "Users can view their own notifications"
+        ON pending_notifications FOR SELECT
+        TO authenticated
+        USING (user_id = auth.uid());
+
+        -- Policy to allow service role to insert notifications
+        DROP POLICY IF EXISTS "Service role can insert notifications" ON pending_notifications;
+        CREATE POLICY "Service role can insert notifications"
+        ON pending_notifications FOR INSERT
+        TO service_role
+        WITH CHECK (true);
+
+        -- Policy to allow users to update their own notifications
+        DROP POLICY IF EXISTS "Users can update their own notifications" ON pending_notifications;
+        CREATE POLICY "Users can update their own notifications"
+        ON pending_notifications FOR UPDATE
+        TO authenticated
+        USING (user_id = auth.uid());
+
+        -- Policy to allow users to delete their own notifications
+        DROP POLICY IF EXISTS "Users can delete their own notifications" ON pending_notifications;
+        CREATE POLICY "Users can delete their own notifications"
+        ON pending_notifications FOR DELETE
+        TO authenticated
+        USING (user_id = auth.uid());
+      ''');
+
+      debugPrint(
+          'Successfully created pending_notifications table and related objects');
+    } catch (e) {
+      debugPrint('Error ensuring pending notifications table: $e');
       // Continue with initialization even if this part fails
     }
   }

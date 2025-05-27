@@ -269,4 +269,20 @@ class EncryptedData {
     required this.ciphertext,
     required this.metadata,
   });
+
+  /// Create from JSON
+  factory EncryptedData.fromJson(Map<String, dynamic> json) {
+    return EncryptedData(
+      ciphertext: base64Decode(json['ciphertext']),
+      metadata: EncryptionMetadata.fromJson(json['metadata']),
+    );
+  }
+
+  /// Convert to JSON
+  Map<String, dynamic> toJson() {
+    return {
+      'ciphertext': base64Encode(ciphertext),
+      'metadata': metadata.toJson(),
+    };
+  }
 }

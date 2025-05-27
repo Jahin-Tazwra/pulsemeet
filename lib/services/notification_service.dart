@@ -8,6 +8,8 @@ import 'package:pulsemeet/models/message.dart' as models;
 import 'package:pulsemeet/models/profile.dart';
 import 'package:pulsemeet/models/pulse.dart';
 import 'package:pulsemeet/services/pulse_participant_service.dart';
+import 'package:pulsemeet/services/firebase_messaging_service.dart';
+import 'package:pulsemeet/services/notification_preferences_service.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 /// A service to handle notifications for pulses
@@ -30,6 +32,14 @@ class NotificationService {
 
   // Participant service
   final _participantService = PulseParticipantService();
+
+  // Firebase messaging service
+  final FirebaseMessagingService _firebaseMessaging =
+      FirebaseMessagingService();
+
+  // Notification preferences service
+  final NotificationPreferencesService _preferencesService =
+      NotificationPreferencesService();
 
   /// Default notification radius in meters
   static const int defaultNotificationRadius = 5000;
@@ -55,6 +65,14 @@ class NotificationService {
     await _flutterLocalNotificationsPlugin.initialize(
       initializationSettings,
     );
+
+    // Initialize Firebase messaging for push notifications
+    await _firebaseMessaging.initialize();
+
+    // Initialize notification preferences
+    await _preferencesService.initialize();
+
+    debugPrint('✅ Notification service initialized with Firebase support');
   }
 
   /// Request notification permissions
@@ -540,6 +558,47 @@ class NotificationService {
       );
     } catch (e) {
       debugPrint('Error sending direct message notification: $e');
+    }
+  }
+
+  /// Show test notification for debugging
+  Future<void> showTestNotification({
+    required String title,
+    required String body,
+  }) async {
+    try {
+      const AndroidNotificationDetails androidPlatformChannelSpecifics =
+          AndroidNotificationDetails(
+        'test',
+        'Test Notifications',
+        channelDescription: 'Test notifications for debugging',
+        importance: Importance.max,
+        priority: Priority.high,
+        showWhen: true,
+      );
+
+      const DarwinNotificationDetails iOSPlatformChannelSpecifics =
+          DarwinNotificationDetails(
+        presentAlert: true,
+        presentBadge: true,
+        presentSound: true,
+      );
+
+      const NotificationDetails platformChannelSpecifics = NotificationDetails(
+        android: androidPlatformChannelSpecifics,
+        iOS: iOSPlatformChannelSpecifics,
+      );
+
+      await _flutterLocalNotificationsPlugin.show(
+        DateTime.now().millisecondsSinceEpoch.remainder(100000),
+        title,
+        body,
+        platformChannelSpecifics,
+      );
+
+      debugPrint('✅ Test notification shown: $title - $body');
+    } catch (e) {
+      debugPrint('❌ Error showing test notification: $e');
     }
   }
 }

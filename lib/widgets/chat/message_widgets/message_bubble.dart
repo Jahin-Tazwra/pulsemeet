@@ -62,7 +62,10 @@ class MessageBubble extends StatelessWidget {
                     ? UserAvatar(
                         userId: message.senderId,
                         avatarUrl: message.senderAvatarUrl,
+                        displayName: message.senderName,
                         size: 28,
+                        skipProfileLoad:
+                            true, // Skip database call since we have the data
                       )
                     : null,
               ),
@@ -76,14 +79,16 @@ class MessageBubble extends StatelessWidget {
                     ? CrossAxisAlignment.end
                     : CrossAxisAlignment.start,
                 children: [
-                  // Sender name (for group chats, first message in group)
+                  // Sender name (only show if we have a valid sender name)
                   if (!isFromCurrentUser &&
-                      conversation.type != ConversationType.directMessage &&
-                      isFirstInGroup)
+                      isFirstInGroup &&
+                      message.senderName != null &&
+                      message.senderName!.isNotEmpty &&
+                      message.senderName != 'Unknown')
                     Padding(
                       padding: const EdgeInsets.only(left: 12, bottom: 4),
                       child: Text(
-                        message.senderName ?? 'Unknown',
+                        message.senderName!,
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
                               color: _getSenderColor(message.senderId),
                               fontWeight: FontWeight.w600,

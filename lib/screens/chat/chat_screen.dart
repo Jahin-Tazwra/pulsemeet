@@ -9,6 +9,7 @@ import 'package:pulsemeet/models/message.dart';
 import 'package:pulsemeet/services/conversation_service.dart';
 import 'package:pulsemeet/services/optimistic_ui_service.dart';
 import 'package:pulsemeet/services/message_cache_service.dart';
+import 'package:pulsemeet/services/firebase_messaging_service.dart';
 import 'package:pulsemeet/widgets/chat/message_list.dart';
 import 'package:pulsemeet/widgets/chat/unified_message_input.dart';
 import 'package:pulsemeet/widgets/chat/typing_indicator.dart';
@@ -34,6 +35,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   final ConversationService _conversationService = ConversationService();
   final OptimisticUIService _optimisticUI = OptimisticUIService.instance;
   final ScrollController _scrollController = ScrollController();
+  final FirebaseMessagingService _firebaseMessaging =
+      FirebaseMessagingService();
 
   StreamSubscription<List<Message>>? _optimisticMessagesSubscription;
   StreamSubscription<Map<String, List<String>>>? _typingSubscription;
@@ -56,6 +59,13 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _currentUserId = Supabase.instance.client.auth.currentUser?.id;
+
+    // Clear notifications for this conversation when it's opened
+    _conversationService
+        .clearNotificationsForConversation(widget.conversation.id);
+
+    // CRITICAL FIX: Set this conversation as active to suppress notifications
+    _firebaseMessaging.setActiveConversation(widget.conversation.id);
 
     // CRITICAL FIX: Check if we have cached messages synchronously
     _checkCachedMessagesSync();
@@ -163,6 +173,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     debugPrint('🧹 Disposing ChatScreen for: ${widget.conversation.id}');
 
     WidgetsBinding.instance.removeObserver(this);
+
+    // CRITICAL FIX: Clear active conversation to re-enable notifications
+    _firebaseMessaging.clearActiveConversation();
 
     // Cancel all subscriptions
     _optimisticMessagesSubscription?.cancel();

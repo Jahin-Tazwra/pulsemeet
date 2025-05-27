@@ -52,10 +52,18 @@ class ChatAppBar extends StatelessWidget implements PreferredSizeWidget {
               // Avatar
               UserAvatar(
                 userId: conversation.participants?.isNotEmpty == true
-                    ? conversation.participants!.first.id
+                    ? conversation.participants!.first.userId
                     : '',
                 avatarUrl: displayAvatar,
+                displayName: conversation.participants?.isNotEmpty == true
+                    ? conversation.participants!.first.displayName
+                    : null,
+                username: conversation.participants?.isNotEmpty == true
+                    ? conversation.participants!.first.username
+                    : null,
                 size: 40,
+                skipProfileLoad:
+                    true, // Skip database call since we have participant data
               ),
               const SizedBox(width: 12),
 

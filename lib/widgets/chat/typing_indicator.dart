@@ -26,7 +26,6 @@ class _TypingIndicatorState extends State<TypingIndicator>
 
   bool _isVisible = false;
   bool _shouldShow = false;
-  String _lastTypingText = 'typing';
 
   @override
   void initState() {
@@ -101,7 +100,10 @@ class _TypingIndicatorState extends State<TypingIndicator>
 
   @override
   Widget build(BuildContext context) {
-    if (!_isVisible) {
+    final typingCount = widget.typingUsers.length;
+
+    // CRITICAL FIX: Don't show indicator when no one is typing
+    if (!_isVisible || typingCount == 0) {
       return const SizedBox.shrink();
     }
 
@@ -109,17 +111,12 @@ class _TypingIndicatorState extends State<TypingIndicator>
     final isDark = theme.brightness == Brightness.dark;
 
     String typingText;
-    final typingCount = widget.typingUsers.length;
 
-    if (typingCount == 0) {
-      typingText = _lastTypingText;
-    } else if (typingCount == 1) {
+    if (typingCount == 1) {
       typingText =
           widget.conversation.isDirectMessage ? 'Typing' : 'Someone is typing';
-      _lastTypingText = typingText;
     } else {
       typingText = '$typingCount people are typing';
-      _lastTypingText = typingText;
     }
 
     final baseColor =

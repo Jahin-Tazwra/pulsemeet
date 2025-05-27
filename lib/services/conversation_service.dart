@@ -27,6 +27,7 @@ import 'progressive_message_loader.dart';
 import 'message_status_service.dart';
 import 'performance_monitoring_service.dart';
 import 'database_optimization_service.dart';
+import 'firebase_messaging_service.dart';
 
 /// Unified service for handling all conversation and messaging functionality
 class ConversationService {
@@ -61,6 +62,8 @@ class ConversationService {
   // Subscriptions
   StreamSubscription<List<Map<String, dynamic>>>? _conversationsSubscription;
   StreamSubscription<List<Map<String, dynamic>>>? _messagesSubscription;
+  StreamSubscription<List<Map<String, dynamic>>>?
+      _globalMessagesSubscription; // NEW: Global message monitoring
   StreamSubscription<List<Map<String, dynamic>>>? _typingSubscription;
   StreamSubscription<ConnectivityResult>? _connectivitySubscription;
 
@@ -94,7 +97,8 @@ class ConversationService {
   // Performance optimization: Cache decrypted last messages to avoid repeated decryption
   final Map<String, Message> _lastMessageCache = {};
   final Map<String, DateTime> _lastMessageCacheTime = {};
-  static const Duration _lastMessageCacheExpiry = Duration(minutes: 5);
+  static const Duration _lastMessageCacheExpiry =
+      Duration(seconds: 30); // Shorter cache for real-time accuracy
 
   // PERFORMANCE OPTIMIZATION: Key caching to avoid repeated database lookups
   final Map<String, String> _conversationKeyCache = {};
@@ -160,6 +164,46 @@ class ConversationService {
     _updateConversationPreviewInstantly(conversationId, message);
   }
 
+  /// Invalidate last message cache for a conversation (when new messages arrive)
+  void _invalidateLastMessageCache(String conversationId) {
+    _lastMessageCache.remove(conversationId);
+    _lastMessageCacheTime.remove(conversationId);
+    debugPrint(
+        '🗑️ Invalidated last message cache for conversation: $conversationId');
+  }
+
+  /// Force refresh a specific conversation from database to get the absolute latest message
+  void _forceRefreshConversationFromDatabase(String conversationId) {
+    // Schedule an async refresh to avoid blocking the real-time processing
+    Future.microtask(() async {
+      try {
+        debugPrint(
+            '🔄 Force refreshing conversation $conversationId from database');
+
+        // Get the absolute latest message from database with force refresh
+        final latestMessage =
+            await _getLastMessage(conversationId, forceRefresh: true);
+
+        if (latestMessage != null) {
+          debugPrint('✅ Got latest message from database: ${latestMessage.id}');
+          debugPrint(
+              '✅ Latest message content: ${latestMessage.getDisplayContent()}');
+
+          // Update the conversation preview with the fresh database message
+          _triggerRealTimeConversationUpdate(conversationId, latestMessage);
+
+          // Also update the cache with the fresh message
+          updateLastMessageCache(conversationId, latestMessage);
+        } else {
+          debugPrint(
+              '⚠️ No latest message found for conversation: $conversationId');
+        }
+      } catch (e) {
+        debugPrint('❌ Error force refreshing conversation from database: $e');
+      }
+    });
+  }
+
   /// Refresh conversation list when a new message is sent
   void _refreshConversationListWithNewMessage(
       String conversationId, Message newMessage) {
@@ -167,8 +211,8 @@ class ConversationService {
       // Get current conversations from cache
       final currentConversations = _conversationsCache[_currentUserId];
       if (currentConversations != null) {
-        // Create a preview of the new message content
-        String messagePreview = newMessage.content;
+        // Create a preview using the proper display content (handles media, etc.)
+        String messagePreview = newMessage.getDisplayContent();
         if (messagePreview.length > 50) {
           messagePreview = '${messagePreview.substring(0, 50)}...';
         }
@@ -321,6 +365,7 @@ class ConversationService {
   late final MessageStatusService _messageStatusService;
   late final PerformanceMonitoringService _performanceMonitor;
   late final DatabaseOptimizationService _databaseOptimizer;
+  late final FirebaseMessagingService _firebaseMessaging;
 
   // Getters
   Stream<List<Conversation>> get conversationsStream =>
@@ -366,6 +411,38 @@ class ConversationService {
     }
   }
 
+  /// Ensure real-time message detection is set up (call after authentication)
+  void ensureRealTimeDetection() {
+    debugPrint(
+        '🔧 ConversationService: Ensuring real-time message detection...');
+
+    // Update current user ID
+    _currentUserId = _supabase.auth.currentUser?.id;
+
+    if (_currentUserId != null) {
+      debugPrint(
+          '🚀 Setting up real-time message detection for user: $_currentUserId');
+      _setupRealTimeMessageDetection();
+    } else {
+      debugPrint('⚠️ Cannot setup real-time detection: No authenticated user');
+    }
+  }
+
+  /// Clear notifications for a conversation (call when conversation is opened)
+  void clearNotificationsForConversation(String conversationId) {
+    try {
+      debugPrint(
+          '🗑️ Clearing notifications for conversation: $conversationId');
+
+      // Clear notifications via Firebase messaging service
+      _firebaseMessaging.clearNotificationsForConversation(conversationId);
+
+      debugPrint('✅ Notifications cleared for conversation: $conversationId');
+    } catch (e) {
+      debugPrint('❌ Error clearing notifications: $e');
+    }
+  }
+
   /// Initialize the service
   Future<void> _initService() async {
     if (_isInitialized) return;
@@ -395,6 +472,7 @@ class ConversationService {
     _messageStatusService = MessageStatusService.instance;
     _performanceMonitor = PerformanceMonitoringService();
     _databaseOptimizer = DatabaseOptimizationService();
+    _firebaseMessaging = FirebaseMessagingService();
 
     // Initialize message cache for instant performance
     _messageCache.initialize();
@@ -440,6 +518,16 @@ class ConversationService {
     _isInitialized = true;
     _stopPerformanceTimer('ConversationService_Init');
     debugPrint('✅ ConversationService initialized');
+
+    // CRITICAL FIX: Set up real-time message detection immediately for instant conversation previews
+    if (_currentUserId != null) {
+      debugPrint(
+          '🚀 Setting up immediate real-time message detection during initialization');
+      _setupRealTimeMessageDetection();
+    } else {
+      debugPrint(
+          '⚠️ Skipping real-time detection setup: No current user during initialization');
+    }
   }
 
   /// Initialize encryption services
@@ -736,9 +824,392 @@ class ConversationService {
           });
 
       debugPrint('✅ Successfully subscribed to conversations');
+
+      // CRITICAL FIX: Set up immediate real-time message detection for conversation previews
+      _setupRealTimeMessageDetection();
     } catch (e) {
       debugPrint('❌ Error subscribing to conversations: $e');
       _conversationsController.addError(e);
+    }
+  }
+
+  /// Set up real-time message detection for instant conversation preview updates
+  void _setupRealTimeMessageDetection() {
+    if (_currentUserId == null) {
+      debugPrint('❌ Cannot setup real-time detection: No current user');
+      return;
+    }
+
+    try {
+      debugPrint(
+          '🚀 Setting up INSTANT real-time message detection for conversation previews');
+
+      // Cancel existing subscription if any
+      _globalMessagesSubscription?.cancel();
+
+      // Use Supabase real-time channels for immediate message detection
+      final channel = _supabase.channel('conversation_preview_updates');
+
+      // Listen for INSERT events on messages table
+      channel.on(
+        RealtimeListenTypes.postgresChanges,
+        ChannelFilter(
+          event: 'INSERT',
+          schema: 'public',
+          table: 'messages',
+        ),
+        (payload, [ref]) {
+          debugPrint('🚀 INSTANT message detected: ${payload['new']?['id']}');
+          debugPrint('🚀 Raw payload: $payload');
+          _handleInstantMessageUpdate(payload['new']).catchError((error) {
+            debugPrint('❌ Error processing instant message: $error');
+          });
+        },
+      );
+
+      // Subscribe to the channel
+      channel.subscribe((status, [error]) {
+        if (status == 'SUBSCRIBED') {
+          debugPrint('✅ INSTANT message detection active');
+        } else if (status == 'CHANNEL_ERROR') {
+          debugPrint('❌ Real-time channel error: $error');
+        }
+      });
+
+      debugPrint('✅ Real-time message detection setup complete');
+    } catch (e) {
+      debugPrint('❌ Error setting up real-time message detection: $e');
+    }
+  }
+
+  /// Handle instant message updates for immediate conversation preview updates
+  Future<void> _handleInstantMessageUpdate(
+      Map<String, dynamic>? messageData) async {
+    if (messageData == null) {
+      debugPrint(
+          '⚠️ Received null message data in _handleInstantMessageUpdate');
+      return;
+    }
+
+    try {
+      debugPrint('🚀 INSTANT MESSAGE UPDATE TRIGGERED!');
+      debugPrint('🚀 Full message data: $messageData');
+
+      final conversationId = messageData['conversation_id'] as String?;
+      final messageId = messageData['id'] as String?;
+      final senderId = messageData['sender_id'] as String?;
+
+      if (conversationId == null || messageId == null) {
+        debugPrint('⚠️ Invalid message data: missing conversation_id or id');
+        return;
+      }
+
+      debugPrint(
+          '🚀 Processing INSTANT message: $messageId in conversation $conversationId');
+      debugPrint('🚀 Sender ID: $senderId, Current User ID: $_currentUserId');
+      debugPrint('🚀 Is own message: ${senderId == _currentUserId}');
+
+      // Check if this conversation belongs to the current user
+      final userConversations = _conversationsCache[_currentUserId] ?? [];
+      final userConversationIds = userConversations.map((c) => c.id).toSet();
+
+      debugPrint(
+          '🚀 User has ${userConversations.length} conversations: ${userConversationIds.take(3).join(', ')}${userConversationIds.length > 3 ? '...' : ''}');
+
+      if (!userConversationIds.contains(conversationId)) {
+        debugPrint('⚠️ Message not for user conversations: $conversationId');
+        debugPrint('⚠️ User conversation IDs: $userConversationIds');
+        return;
+      }
+
+      // CRITICAL FIX: Immediately invalidate cache and force refresh
+      debugPrint('🚀 INSTANT cache invalidation for: $conversationId');
+      _invalidateLastMessageCache(conversationId);
+
+      // Force immediate conversation preview refresh
+      debugPrint('🚀 INSTANT conversation refresh for: $conversationId');
+      _forceRefreshConversationFromDatabase(conversationId);
+
+      // CRITICAL INTEGRATION: Trigger push notification for the new message
+      debugPrint('🚀 About to trigger push notification...');
+      await _triggerPushNotificationForMessage(messageData);
+      debugPrint('🚀 Push notification trigger completed');
+
+      debugPrint('✅ INSTANT message update completed for: $conversationId');
+    } catch (e) {
+      debugPrint('❌ Error handling instant message update: $e');
+      debugPrint('❌ Stack trace: ${StackTrace.current}');
+    }
+  }
+
+  /// Trigger push notification for a new message
+  Future<void> _triggerPushNotificationForMessage(
+      Map<String, dynamic>? messageData) async {
+    if (messageData == null) return;
+
+    try {
+      debugPrint(
+          '🔔 Processing push notification for message data: ${messageData.keys.toList()}');
+
+      final conversationId = messageData['conversation_id'] as String?;
+      final messageId = messageData['id'] as String?;
+      final senderId = messageData['sender_id'] as String?;
+      final content = messageData['content'] as String?;
+      final isEncrypted = messageData['is_encrypted'] as bool? ?? false;
+
+      debugPrint(
+          '🔔 Message details: conversationId=$conversationId, messageId=$messageId, senderId=$senderId, isEncrypted=$isEncrypted');
+
+      if (conversationId == null || messageId == null || senderId == null) {
+        debugPrint('⚠️ Invalid message data for push notification');
+        debugPrint(
+            '⚠️ Missing: conversationId=${conversationId == null}, messageId=${messageId == null}, senderId=${senderId == null}');
+        return;
+      }
+
+      // Don't send notifications for own messages
+      if (senderId == _currentUserId) {
+        debugPrint(
+            '🚫 Skipping push notification for own message (sender: $senderId, current: $_currentUserId)');
+        return;
+      }
+
+      debugPrint(
+          '🔔 Triggering push notification for message: $messageId from sender: $senderId');
+
+      // Get conversation participants to determine who should receive notifications
+      final participants = await _getConversationParticipants(conversationId);
+
+      // Get sender information
+      final senderProfile = await _getSenderProfile(senderId);
+      final senderName = senderProfile?.displayName ??
+          senderProfile?.username ??
+          'Unknown User';
+
+      // Decrypt message content for notification preview (if possible)
+      String notificationContent = 'New message';
+      try {
+        if (isEncrypted && content != null) {
+          debugPrint(
+              '🔓 Attempting to decrypt message content for notification');
+          // Get conversation key for decryption
+          final conversationKey =
+              await _getCachedConversationKey(conversationId);
+          if (conversationKey != null) {
+            // Decrypt using the encryption isolate
+            final decryptedContent = await _encryptionIsolate.decryptMessage(
+              encryptedContent: content,
+              conversationKey: conversationKey,
+              encryptionMetadata: messageData['encryption_metadata'] ?? {},
+            );
+
+            if (decryptedContent.isNotEmpty &&
+                !decryptedContent.contains('[Encrypted')) {
+              notificationContent = decryptedContent;
+              debugPrint(
+                  '✅ Successfully decrypted message for notification: ${notificationContent.length > 20 ? notificationContent.substring(0, 20) + '...' : notificationContent}');
+              // Limit content length for notification
+              if (notificationContent.length > 100) {
+                notificationContent =
+                    '${notificationContent.substring(0, 100)}...';
+              }
+            } else {
+              debugPrint(
+                  '⚠️ Decryption returned encrypted placeholder or empty content');
+            }
+          } else {
+            debugPrint('⚠️ No conversation key available for decryption');
+          }
+        } else if (!isEncrypted && content != null && content.isNotEmpty) {
+          // For non-encrypted messages, use the content directly
+          notificationContent = content;
+          debugPrint(
+              '✅ Using plain text content for notification: ${notificationContent.length > 20 ? notificationContent.substring(0, 20) + '...' : notificationContent}');
+          if (notificationContent.length > 100) {
+            notificationContent = '${notificationContent.substring(0, 100)}...';
+          }
+        } else {
+          debugPrint(
+              '⚠️ No content available for notification (isEncrypted: $isEncrypted, content: ${content?.isNotEmpty})');
+        }
+      } catch (e) {
+        debugPrint('⚠️ Could not decrypt message for notification: $e');
+        // Use generic message for encrypted content
+        notificationContent = 'New message';
+      }
+
+      // Send push notifications to all participants except the sender
+      debugPrint(
+          '🔔 Found ${participants.length} participants for notification');
+      debugPrint('🔔 Sender ID: $senderId, Current User ID: $_currentUserId');
+
+      for (final participant in participants) {
+        debugPrint('🔔 Checking participant: ${participant.userId}');
+        // Send notifications to all participants except the sender
+        // Note: This code runs on each participant's device, so we send to others
+        if (participant.userId != senderId) {
+          debugPrint(
+              '🔔 Sending notification to participant: ${participant.userId}');
+          await _sendPushNotificationToUser(
+            userId: participant.userId,
+            conversationId: conversationId,
+            messageId: messageId,
+            senderId: senderId, // Pass the actual sender ID
+            senderName: senderName,
+            messageContent: notificationContent,
+            messageType: messageData['type'] as String? ?? 'text',
+          );
+        } else {
+          debugPrint(
+              '🚫 Skipping notification for sender: ${participant.userId}');
+        }
+      }
+
+      debugPrint('✅ Push notifications triggered for message: $messageId');
+    } catch (e) {
+      debugPrint('❌ Error triggering push notification: $e');
+    }
+  }
+
+  /// Send push notification to a specific user
+  Future<void> _sendPushNotificationToUser({
+    required String userId,
+    required String conversationId,
+    required String messageId,
+    required String senderId, // Add the actual sender ID
+    required String senderName,
+    required String messageContent,
+    required String messageType,
+  }) async {
+    try {
+      debugPrint('📤 Sending push notification to user: $userId');
+      debugPrint('📤 Message content: $messageContent');
+      debugPrint('📤 Sender: $senderName');
+
+      // Get user's FCM tokens from database
+      debugPrint('📤 Querying user_devices table for user: $userId');
+      final response = await _supabase
+          .from('user_devices')
+          .select('device_token, device_type')
+          .eq('user_id', userId)
+          .eq('is_active', true);
+
+      debugPrint('📤 Device query response: $response');
+      debugPrint('📤 Response type: ${response.runtimeType}');
+      debugPrint(
+          '📤 Response length: ${response is List ? response.length : 'not a list'}');
+
+      if (response is List && response.isNotEmpty) {
+        debugPrint(
+            '📤 Found ${response.length} active devices for user: $userId');
+        for (final device in response) {
+          final deviceToken = device['device_token'] as String?;
+          final deviceType = device['device_type'] as String?;
+
+          debugPrint(
+              '📤 Processing device: token=${deviceToken?.substring(0, 20)}..., type=$deviceType');
+
+          if (deviceToken != null) {
+            debugPrint(
+                '📤 Calling edge function for device token: ${deviceToken.substring(0, 20)}...');
+            // Send FCM notification via Supabase Edge Function or direct FCM API
+            await _sendFCMNotification(
+              deviceToken: deviceToken,
+              deviceType: deviceType,
+              conversationId: conversationId,
+              messageId: messageId,
+              senderId: senderId, // Pass the actual sender ID
+              senderName: senderName,
+              messageContent: messageContent,
+              messageType: messageType,
+            );
+          } else {
+            debugPrint('⚠️ Device has null token: $device');
+          }
+        }
+      } else {
+        debugPrint('⚠️ No active devices found for user: $userId');
+        debugPrint('⚠️ Raw response: $response');
+      }
+    } catch (e) {
+      debugPrint('❌ Error sending push notification to user $userId: $e');
+      debugPrint('❌ Stack trace: ${StackTrace.current}');
+    }
+  }
+
+  /// Send FCM notification using Supabase Edge Function
+  Future<void> _sendFCMNotification({
+    required String deviceToken,
+    String? deviceType,
+    required String conversationId,
+    required String messageId,
+    required String senderId, // Add the actual sender ID
+    required String senderName,
+    required String messageContent,
+    required String messageType,
+  }) async {
+    try {
+      debugPrint('📤 Sending push notification via edge function...');
+      debugPrint('📱 Device token: ${deviceToken.substring(0, 20)}...');
+      debugPrint('📱 Sender: $senderName');
+      debugPrint(
+          '📱 Message: ${messageContent.length > 50 ? messageContent.substring(0, 50) + '...' : messageContent}');
+
+      // Get sender's profile picture for notification using the actual sender ID
+      debugPrint('🔍 DEBUG: Getting profile picture for sender ID: $senderId');
+      String? senderAvatarUrl;
+      try {
+        final profileResponse = await _supabase
+            .from('profiles')
+            .select('avatar_url')
+            .eq('id', senderId)
+            .maybeSingle();
+        senderAvatarUrl = profileResponse?['avatar_url'] as String?;
+        debugPrint('🖼️ Sender avatar URL for $senderId: $senderAvatarUrl');
+      } catch (e) {
+        debugPrint(
+            '⚠️ Could not fetch sender profile picture for $senderId: $e');
+      }
+
+      // Call the working Supabase Edge Function
+      final response = await _supabase.functions.invoke(
+        'send-push-notification-simple',
+        body: {
+          'device_token': deviceToken,
+          'device_type': deviceType ?? 'unknown',
+          'title': senderName,
+          'body': messageContent,
+          'data': {
+            'type': 'message',
+            'conversation_id': conversationId,
+            'message_id': messageId,
+            'sender_id': senderId,
+            'sender_name': senderName,
+            'sender_avatar_url': senderAvatarUrl,
+            'message_content': messageContent,
+            'message_type': messageType,
+          },
+        },
+      );
+
+      if (response.status == 200) {
+        debugPrint('✅ Push notification sent successfully via edge function');
+        debugPrint('📱 Response: ${response.data}');
+      } else {
+        debugPrint('❌ Push notification failed: ${response.status}');
+        debugPrint('❌ Response: ${response.data}');
+      }
+    } catch (e) {
+      debugPrint('❌ Error sending push notification via edge function: $e');
+
+      // Fallback: Use local Firebase messaging service
+      try {
+        debugPrint('🔄 Attempting fallback to local Firebase messaging...');
+        await _firebaseMessaging.initialize();
+        debugPrint('🔄 Local Firebase messaging initialized as fallback');
+      } catch (fallbackError) {
+        debugPrint('❌ Fallback Firebase messaging also failed: $fallbackError');
+      }
     }
   }
 
@@ -932,48 +1403,69 @@ class ConversationService {
             continue;
           }
 
-          // ENHANCEMENT: Get last message preview with proper encryption handling
+          // ENHANCEMENT: Always prioritize actual decrypted message content over generic previews
           String? lastMessagePreview;
           final settingsPreview =
               conversation.settings['last_message_preview'] as String?;
-          final isLastMessageEncrypted =
-              conversation.settings['last_message_encrypted'] as bool? ?? false;
-          final lastMessageId =
-              conversation.settings['last_message_id'] as String?;
 
-          if (settingsPreview != null && settingsPreview.isNotEmpty) {
-            if (isLastMessageEncrypted &&
-                lastMessage != null &&
-                lastMessageId == lastMessage.id) {
-              // For encrypted messages, try to use decrypted content if available
-              try {
-                final decryptedPreview = lastMessage.getDisplayContent();
-                if (decryptedPreview.isNotEmpty &&
-                    !decryptedPreview.contains('[Encrypted')) {
-                  lastMessagePreview = decryptedPreview;
-                  debugPrint(
-                      '🔓 Using decrypted preview for encrypted message: ${conversation.id}');
-                } else {
-                  lastMessagePreview =
-                      settingsPreview; // Fallback to generic preview
-                  debugPrint(
-                      '⚡ Using generic preview for encrypted message: ${conversation.id}');
-                }
-              } catch (e) {
-                lastMessagePreview =
-                    settingsPreview; // Fallback to generic preview
+          // PRIORITY 1: Try to use actual decrypted message content
+          if (lastMessage != null) {
+            try {
+              final decryptedPreview = lastMessage.getDisplayContent();
+              if (decryptedPreview.isNotEmpty &&
+                  !decryptedPreview.contains('[Encrypted') &&
+                  decryptedPreview != 'New message') {
+                lastMessagePreview = decryptedPreview;
                 debugPrint(
-                    '⚠️ Failed to decrypt preview, using generic: ${conversation.id}');
+                    '🔓 Using actual decrypted content for preview: ${conversation.id}');
+              } else {
+                // If decryption failed or returned generic text, try to get fresh message from database
+                debugPrint(
+                    '🔄 Getting fresh last message from database for preview: ${conversation.id}');
+                final freshMessage =
+                    await _getLastMessage(conversation.id, forceRefresh: true);
+                if (freshMessage != null) {
+                  final freshPreview = freshMessage.getDisplayContent();
+                  if (freshPreview.isNotEmpty &&
+                      freshPreview != 'New message') {
+                    lastMessagePreview = freshPreview;
+                    debugPrint(
+                        '✅ Using fresh message content for preview: ${conversation.id}');
+                  } else {
+                    lastMessagePreview = await _forceDecryptMessagePreview(
+                        freshMessage, conversation.id);
+                    debugPrint(
+                        '🔓 Force-decrypted fresh preview for conversation: ${conversation.id}');
+                  }
+                } else {
+                  lastMessagePreview = await _forceDecryptMessagePreview(
+                      lastMessage, conversation.id);
+                  debugPrint(
+                      '🔓 Force-decrypted cached preview for conversation: ${conversation.id}');
+                }
               }
-            } else {
+            } catch (e) {
+              debugPrint('⚠️ Error getting decrypted preview: $e');
+              // Fall back to database preview only if decryption completely fails
+              lastMessagePreview = settingsPreview;
+            }
+          }
+
+          // PRIORITY 2: Use database preview only if no message available
+          if (lastMessagePreview == null ||
+              lastMessagePreview.isEmpty ||
+              lastMessagePreview == 'New message') {
+            if (settingsPreview != null &&
+                settingsPreview.isNotEmpty &&
+                settingsPreview != 'New message') {
               lastMessagePreview = settingsPreview;
               debugPrint(
-                  '⚡ Using database preview for conversation: ${conversation.id}');
+                  '⚡ Using database preview as fallback for conversation: ${conversation.id}');
+            } else {
+              lastMessagePreview = 'No messages yet';
+              debugPrint(
+                  '📭 No preview available for conversation: ${conversation.id}');
             }
-          } else if (lastMessage != null) {
-            lastMessagePreview = lastMessage.getDisplayContent();
-            debugPrint(
-                '🔓 Using decrypted preview for conversation: ${conversation.id}');
           }
 
           conversations.add(conversation.copyWith(
@@ -1309,25 +1801,31 @@ class ConversationService {
   }
 
   /// Get last message for conversation with caching
-  Future<Message?> _getLastMessage(String conversationId) async {
+  Future<Message?> _getLastMessage(String conversationId,
+      {bool forceRefresh = false}) async {
     try {
-      // Check cache first for performance
-      final cachedMessage = _lastMessageCache[conversationId];
-      final cacheTime = _lastMessageCacheTime[conversationId];
+      // Check cache first for performance (unless force refresh is requested)
+      if (!forceRefresh) {
+        final cachedMessage = _lastMessageCache[conversationId];
+        final cacheTime = _lastMessageCacheTime[conversationId];
 
-      if (cachedMessage != null && cacheTime != null) {
-        final isExpired =
-            DateTime.now().difference(cacheTime) > _lastMessageCacheExpiry;
-        if (!isExpired) {
-          debugPrint(
-              '⚡ Using cached last message for conversation: $conversationId');
-          return cachedMessage;
-        } else {
-          debugPrint(
-              '🕐 Last message cache expired for conversation: $conversationId');
-          _lastMessageCache.remove(conversationId);
-          _lastMessageCacheTime.remove(conversationId);
+        if (cachedMessage != null && cacheTime != null) {
+          final isExpired =
+              DateTime.now().difference(cacheTime) > _lastMessageCacheExpiry;
+          if (!isExpired) {
+            debugPrint(
+                '⚡ Using cached last message for conversation: $conversationId');
+            return cachedMessage;
+          } else {
+            debugPrint(
+                '🕐 Last message cache expired for conversation: $conversationId');
+            _lastMessageCache.remove(conversationId);
+            _lastMessageCacheTime.remove(conversationId);
+          }
         }
+      } else {
+        debugPrint(
+            '🔄 Force refreshing last message for conversation: $conversationId');
       }
 
       debugPrint('🔍 Getting last message for conversation: $conversationId');
@@ -1454,6 +1952,45 @@ class ConversationService {
       debugPrint('❌ Error getting last message for $conversationId: $e');
       debugPrint('📍 Stack trace: $stackTrace');
       return null;
+    }
+  }
+
+  /// Force decrypt message content for conversation preview
+  Future<String> _forceDecryptMessagePreview(
+      Message message, String conversationId) async {
+    try {
+      if (!message.isEncrypted) {
+        return message.getDisplayContent();
+      }
+
+      debugPrint('🔓 Force-decrypting message for preview: ${message.id}');
+
+      // Get conversation key using the secure ECDH derivation
+      final conversationKey = await _getCachedConversationKey(conversationId);
+      if (conversationKey == null) {
+        debugPrint('❌ Could not get conversation key for preview decryption');
+        return 'New message'; // Fallback to generic preview
+      }
+
+      // Decrypt using the encryption isolate for performance
+      final decryptedContent = await _encryptionIsolate.decryptMessage(
+        encryptedContent: message.content,
+        conversationKey: conversationKey,
+        encryptionMetadata: message.encryptionMetadata ?? {},
+      );
+
+      if (decryptedContent.isNotEmpty &&
+          !decryptedContent.contains('[Encrypted')) {
+        debugPrint(
+            '✅ Successfully force-decrypted preview: ${decryptedContent.substring(0, math.min(20, decryptedContent.length))}...');
+        return decryptedContent;
+      } else {
+        debugPrint('⚠️ Force-decryption returned empty or invalid content');
+        return 'New message'; // Fallback to generic preview
+      }
+    } catch (e) {
+      debugPrint('❌ Error force-decrypting message preview: $e');
+      return 'New message'; // Fallback to generic preview
     }
   }
 
@@ -2116,6 +2653,26 @@ class ConversationService {
         }
       }
 
+      // CRITICAL FIX: If there are new messages, invalidate the last message cache
+      if (newMessages.isNotEmpty) {
+        _invalidateLastMessageCache(conversationId);
+        debugPrint(
+            '🔄 Invalidated last message cache due to ${newMessages.length} new messages');
+
+        // CRITICAL FIX: For multiple consecutive messages, ensure preview updates for each
+        // Find the latest message to update the conversation preview
+        final latestMessageData = newMessages.reduce((a, b) {
+          final aTime = DateTime.parse(
+              a['created_at'] ?? DateTime.now().toIso8601String());
+          final bTime = DateTime.parse(
+              b['created_at'] ?? DateTime.now().toIso8601String());
+          return bTime.isAfter(aTime) ? b : a;
+        });
+
+        debugPrint(
+            '🔄 Latest new message for preview update: ${latestMessageData['id']}');
+      }
+
       // REAL-TIME OPTIMIZATION: Process new messages first for instant delivery
       final List<Message> allProcessedMessages = [];
 
@@ -2135,6 +2692,19 @@ class ConversationService {
         _optimisticUI.mergeServerMessages(conversationId, quickMergedMessages);
         debugPrint(
             '⚡ REAL-TIME: Delivered ${newMessages.length} new messages instantly');
+
+        // CRITICAL FIX: Force refresh conversation preview from database for latest message
+        if (newProcessedMessages.isNotEmpty) {
+          debugPrint(
+              '🔄 New messages arrived, forcing conversation preview refresh from database');
+
+          // Force a complete refresh of the conversation preview by invalidating cache
+          // and triggering a fresh database query
+          _invalidateLastMessageCache(conversationId);
+
+          // Force refresh the entire conversation list to get the absolute latest message from database
+          _forceRefreshConversationFromDatabase(conversationId);
+        }
       }
 
       // Process existing messages (updates/status changes) in background
@@ -3049,6 +3619,8 @@ class ConversationService {
     // Cancel all subscriptions
     _conversationsSubscription?.cancel();
     _messagesSubscription?.cancel();
+    _globalMessagesSubscription
+        ?.cancel(); // NEW: Cancel global message subscription
     _typingSubscription?.cancel();
     _connectivitySubscription?.cancel();
 

@@ -147,10 +147,18 @@ class ConversationCard extends StatelessWidget {
       children: [
         UserAvatar(
           userId: conversation.participants?.isNotEmpty == true
-              ? conversation.participants!.first.id
+              ? conversation.participants!.first.userId
               : '',
           avatarUrl: avatarUrl,
+          displayName: conversation.participants?.isNotEmpty == true
+              ? conversation.participants!.first.displayName
+              : null,
+          username: conversation.participants?.isNotEmpty == true
+              ? conversation.participants!.first.username
+              : null,
           size: 56,
+          skipProfileLoad:
+              true, // Skip database call since we have participant data
         ),
 
         // Online indicator for direct messages
