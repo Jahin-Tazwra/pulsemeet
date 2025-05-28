@@ -43,4 +43,14 @@ class EnvConfig {
     }
     return key;
   }
+
+  /// Get the Google OAuth Client ID
+  static String? get googleOAuthClientId {
+    final clientId = dotenv.env['GOOGLE_OAUTH_CLIENT_ID'];
+    if (clientId == null || clientId.isEmpty) {
+      debugPrint('Warning: GOOGLE_OAUTH_CLIENT_ID not found in .env file');
+      return null; // Return null to indicate missing configuration
+    }
+    return clientId;
+  }
 }

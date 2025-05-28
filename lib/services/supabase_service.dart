@@ -8,6 +8,7 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../config/supabase_config.dart';
+import '../config/env_config.dart';
 import '../models/pulse.dart';
 import '../models/profile.dart';
 import '../models/message.dart';
@@ -21,9 +22,8 @@ class SupabaseService {
   final GoogleSignIn _googleSignIn = GoogleSignIn(
     scopes: ['email', 'profile'],
     // Use serverClientId for Android, clientId for web
-    serverClientId: kIsWeb
-        ? null
-        : '241993306821-2rikugjskphsr867h067q1ifrkb2i7rq.apps.googleusercontent.com',
+    // SECURITY: Use environment variable instead of hardcoded client ID
+    serverClientId: kIsWeb ? null : EnvConfig.googleOAuthClientId,
   );
 
   // Expose client for direct access in special cases
