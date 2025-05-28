@@ -47,9 +47,17 @@ app.*.map.json
 
 .env
 
-# Google Cloud Service Account credentials
+# Google Cloud Service Account credentials and API keys
 *.json
 **/google-services.json
 **/GoogleService-Info.plist
 **/*-service-account*.json
 **/*-credentials*.json
+
+# Firebase and Google Services configuration files
+android/app/google-services.json
+ios/Runner/GoogleService-Info.plist
+
+# API Keys and sensitive configuration
+**/*-api-key*.txt
+**/*-config*.json
